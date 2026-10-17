@@ -238,6 +238,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/providers/supabase/attachmentStorage.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/providers/fakerest/search.ts",
           "type": "registry:component"
         },
@@ -427,6 +431,10 @@
         },
         {
           "path": "src/components/atomic-crm/misc/usePapaParse.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/misc/useLogRecordView.ts",
           "type": "registry:component"
         },
         {
