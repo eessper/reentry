@@ -31,13 +31,13 @@ Atomic CRM is a **single-team** CRM. Every finding below is a problem for a mult
 | F3 | Self-signup is open and the first user to sign up becomes admin (`handle_new_user`). In a SaaS that lets anyone create an account. | High | **Session 1** (blocked in the database) |
 | F4 | `configuration` is a single global row editable by any admin, so one organisation's admin would change settings for everyone. | High | **Session 1** (made per-organisation) |
 | F5 | Foreign keys don't check organisation, so a row could point at another organisation's record (for example a note attached to someone else's contact). | High | **Session 1** (composite foreign keys) |
-| F6 | The `attachments` storage bucket is **public**: anyone with a file's URL can download it without logging in, and any logged-in user can list every file. | Critical | **Session 2** (needs signed URLs in the frontend) |
+| F6 | The `attachments` storage bucket is **public**: anyone with a file's URL can download it without logging in, and any logged-in user can list every file. | Critical | **Session 2** (fixed: private bucket, organisation-scoped paths, signed URLs) |
 | F7 | Saving a contact sends a hash of their email to **gravatar.com** and their email domain to **favicon.show** (US services). That breaches the UK/EU residency rule. | High | **Session 3** (new `service_users` table has no such trigger; contacts are retired) |
 | F8 | `contacts.tags` and `deals.contact_ids` are arrays of ids with no foreign key, so they can hold ids from another organisation. RLS still hides the other organisation's rows, so nothing leaks, but the data is untidy. | Low | Retired with the CRM tables in Session 3 |
-| F9 | The `delete_note_attachments` edge function accepts any signed-in user's token and deletes whatever storage paths it is given, in any organisation. | High | **Session 2**, with the storage fix (F6) |
-| F10 | The `postmark` inbound-email function writes contacts and notes with the service role. After Session 1 those writes fail (no organisation to stamp), so it fails closed; it must be removed or tenant-scoped before deployment. | Medium | **Session 2** |
+| F9 | The `delete_note_attachments` edge function accepts any signed-in user's token and deletes whatever storage paths it is given, in any organisation. | High | **Session 2** (fixed: it only drains a queue the database fills) |
+| F10 | The `postmark` inbound-email function writes contacts and notes with the service role. After Session 1 those writes fail (no organisation to stamp), so it fails closed; it must be removed or tenant-scoped before deployment. | Medium | **Session 2** (fixed: removed) |
 
-**Until F6 and F7 are fixed, do not upload files or put any real-looking contact emails into the CRM screens.** Phase 1 is synthetic data only anyway.
+**Until F7 is fixed, do not put any real-looking contact emails into the CRM screens.** Phase 1 is synthetic data only anyway.
 
 ## 3. Tenancy design (Session 1)
 
@@ -71,9 +71,48 @@ Tables covered in Session 1: `sales`, `companies`, `contacts`, `contact_notes`, 
 - The `users` edge function puts invited users into the inviting admin's organisation, and refuses to read or change users in another organisation (F2).
 - The first organisation and its first admin are created by an operator script using the service role (`scripts/create-organisation.mjs`, see `CLAUDE.md`), not through the app.
 
-### Roles in Session 1
+## 3b. Roles, audit log and attachments (Session 2)
 
-Session 1 only builds the organisation boundary. Roles are stored on `memberships` now; Session 2 enforces them (key workers see only assigned service users, viewers see aggregates only). Until then, `sales.administrator` is kept in step with `memberships.role` by a trigger so the existing admin screens still work. Session 2 removes `sales.administrator` and makes `memberships.role` the only source.
+### Roles
+
+`memberships.role` is the only source of a user's role; `sales.administrator` is gone. The frontend reads roles through the `sales_summary` view, and the `users` edge function changes them (org admins only, never their own role, so an organisation can't lose its last admin by accident).
+
+| Role | Records | Changes |
+|---|---|---|
+| `org_admin` | Everything in the organisation | Everything, plus organisation settings, members and roles |
+| `clinical_lead` | Everything in the organisation | Records, including creating, deleting and (re)assigning contacts |
+| `key_worker` | Contacts and deals whose `sales_id` is theirs, and the notes and tasks on those | Those records; can't create, delete or reassign contacts |
+| `viewer` | No individual records: only their organisation, the staff list, tags and settings | Nothing (except their own profile) |
+
+Until Session 3 adds `service_users`, **contacts stand in for service users** and `contacts.sales_id` is the "assigned worker". The policies follow two patterns that Session 3 reuses:
+
+- **Assignable tables** (`contacts`, `deals`): `organisation_id` matches and either the caller sees everything or is a key worker and `sales_id` is theirs. The rule is written inline (each helper is evaluated once per query) and also exists as `private.can_access_assigned()` for functions.
+- **Child tables** (`contact_notes`, `tasks`, `deal_notes`): visible when their parent is, via `exists (select 1 from parent ...)`, which runs under the parent's own policy. The assignment rule lives in one place.
+
+Views (`contacts_summary`, `activity_log`, …) and `global_search` run as the caller, so they follow automatically. `merge_contacts` (SQL function and edge function) now refuses instead of half-merging when the caller can't delete the duplicate.
+
+### Audit log
+
+`audit_log` (`organisation_id`, `actor_user_id`, `action`, `table_name`, `record_id`, `before`, `after`, `created_at`) is written only by:
+
+- the `audit_row_change` trigger on every tenant table (create, update and delete, with the row before and after), including changes made by the service role and by other triggers (cascades, the auth sync);
+- `log_record_view(table_name, record_id)`, which the UI calls when a record page opens. It refuses records the caller can't see. Only `contacts` for now.
+
+No app role can insert, update or delete rows; triggers also refuse updates, deletes and truncates from the service role and the table owner. Org admins and clinical leads read their organisation's log; key workers read the history of the contacts they can see; viewers read nothing.
+
+Limits: view logging relies on the UI calling the function, so a direct API read isn't logged. Making reads go only through logging functions is a Session 3 design question for `service_users`.
+
+### Attachments
+
+The `attachments` bucket is private. Files live at `<organisation_id>/notes/<uuid>` (note attachments) or `<organisation_id>/shared/<uuid>` (company logos, avatars, organisation branding). Storage policies decide who may read each file, and the browser only gets signed URLs (1 hour) for those:
+
+- `shared/`: every member of the organisation.
+- `notes/`: org admins and clinical leads; otherwise only the uploader, or someone who can see a note the file is attached to (so key workers only get their own service users' files).
+- Nobody but the service role deletes files.
+
+When a note loses an attachment (edit or delete), the `cleanup_note_attachments` trigger queues the file in `storage_deletion_queue`, but only if it is in the note's own organisation folder and no other note still uses it. The `delete_note_attachments` function then deletes what is queued; it never takes paths from the request.
+
+Files uploaded before Session 2 sit at the bucket root, outside every organisation folder, so only the service role can reach them now.
 
 ## 4. Mapping the CRM onto the brief
 
@@ -87,12 +126,17 @@ Session 1 only builds the organisation boundary. Roles are stored on `membership
 | `activity_log` view | Activity feed | **Replace** with the `activity_events` table from the brief (Session 3). |
 | Dashboard | Live Control Tower | **Replace** (Session 4). |
 | Edge functions `users`, `update_password` | Staff management | **Keep**, tenant-scoped (Session 1). |
-| Edge functions `postmark`, `mcp`, `merge_contacts`, `delete_note_attachments` | — | **Disable** before any real deployment; review in Session 2. `mcp` lets an AI client run SQL and must not ship to production. |
+| Edge functions `mcp`, `merge_contacts` | — | **Disable** before any real deployment. `mcp` lets an AI client run SQL and must not ship to production. `merge_contacts` runs as the caller (RLS applies). |
+| Edge function `delete_note_attachments` | Attachment cleanup | **Kept**, rewritten in Session 2 to drain a database queue (F9). |
+| Edge function `postmark` | — | **Removed** in Session 2 (F10). |
 
 ## 5. Testing approach
 
 - **Database tests** use pgTAP, run with `npx supabase test db` (or `make test-db`) against the local Supabase stack. They live in `supabase/tests/`. Each test impersonates real users by setting `role authenticated` and the JWT `sub` claim, which is exactly how requests arrive through the API.
 - The tenancy suite (`supabase/tests/tenancy_isolation.test.sql`) creates two organisations with users and data, then proves, for every tenant table, that a user in one organisation can't select, insert, update or delete the other organisation's rows, and can't create cross-organisation links.
+- The roles suite (`roles_permissions.test.sql`) signs in as each role and proves what it can see and change, including that key workers can't see or touch colleagues' records and viewers get no individual records.
+- The audit suite (`audit_log.test.sql`) proves every insert, update and delete on every audited table writes a log row, views are logged, and nobody (app roles, service role, owner) can change or remove log rows.
+- The storage suite (`storage_attachments.test.sql`) proves the bucket is private, who can read and upload what, and that the deletion queue only ever holds the note's own organisation's orphaned files.
 - Frontend and edge-function unit tests stay on Vitest (`make test`).
 
 ## 6. Running it locally

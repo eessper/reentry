@@ -4,6 +4,7 @@ import {
   type DataProvider,
   type GetListParams,
   type Identifier,
+  type RaRecord,
   type ResourceCallbacks,
 } from "ra-core";
 import type {
@@ -18,7 +19,7 @@ import type {
   SignUpData,
 } from "../../types";
 import type { ConfigurationContextValue } from "../../root/ConfigurationContext";
-import { ATTACHMENTS_BUCKET } from "../commons/attachments";
+import { signFiles, signUrl, uploadToBucket } from "./attachmentStorage";
 import { getIsInitialized } from "./authProvider";
 import { getSupabaseClient } from "./supabase";
 
@@ -31,11 +32,10 @@ const getBaseDataProvider = () =>
   });
 
 const processCompanyLogo = async (params: any) => {
-  const logo = params.data.logo;
-
-  if (logo?.rawFile instanceof File) {
-    await uploadToBucket(logo);
-  }
+  const logo =
+    params.data.logo?.rawFile instanceof File
+      ? await uploadToBucket(params.data.logo, "shared")
+      : params.data.logo;
 
   return {
     ...params,
@@ -58,14 +58,23 @@ const getDataProviderWithCustomMethods = () => {
       if (resource === "contacts") {
         return baseDataProvider.getList("contacts_summary", params);
       }
+      if (resource === "sales") {
+        return baseDataProvider.getList("sales_summary", params);
+      }
       if (resource === "activity_log") {
         const { data, total } = await baseDataProvider.getList(
           "activity_log",
           params,
         );
+        // Sign the logos of the companies embedded in the feed
+        const rows = await signRecordFiles(
+          data,
+          (row: any) => (row.company ? getLogo(row.company) : []),
+          (row: any, [logo]) => ({ ...row, company: { ...row.company, logo } }),
+        );
         // Rename snake_case view columns to camelCase to match Activity type
         return {
-          data: data.map((row: any) => ({
+          data: rows.map((row: any) => ({
             ...row,
             contactNote: row.contact_note ?? undefined,
             dealNote: row.deal_note ?? undefined,
@@ -84,6 +93,9 @@ const getDataProviderWithCustomMethods = () => {
       }
       if (resource === "contacts") {
         return baseDataProvider.getOne("contacts_summary", params);
+      }
+      if (resource === "sales") {
+        return baseDataProvider.getOne("sales_summary", params);
       }
 
       return baseDataProvider.getOne(resource, params);
@@ -149,7 +161,7 @@ const getDataProviderWithCustomMethods = () => {
         secondary_emails,
         first_name,
         last_name,
-        administrator,
+        role,
         avatar,
         disabled,
       } = data;
@@ -165,7 +177,7 @@ const getDataProviderWithCustomMethods = () => {
             secondary_emails,
             first_name,
             last_name,
-            administrator,
+            role,
             disabled,
             avatar,
           },
@@ -250,6 +262,16 @@ const getDataProviderWithCustomMethods = () => {
       }
       return data ?? [];
     },
+    async logRecordView(tableName: "contacts", recordId: Identifier) {
+      const { error } = await getSupabaseClient().rpc("log_record_view", {
+        table_name: tableName,
+        record_id: recordId,
+      });
+      if (error) {
+        console.error("log_record_view.error", error);
+        throw new Error("Failed to log the record view");
+      }
+    },
     async mergeContacts(sourceId: Identifier, targetId: Identifier) {
       const { data, error } = await getSupabaseClient().functions.invoke(
         "merge_contacts",
@@ -270,7 +292,7 @@ const getDataProviderWithCustomMethods = () => {
       const { data } = await baseDataProvider.getOne("configuration", {
         id: 1,
       });
-      return (data?.config as ConfigurationContextValue) ?? {};
+      return signConfigLogos((data?.config as ConfigurationContextValue) ?? {});
     },
     async updateConfiguration(
       config: ConfigurationContextValue,
@@ -280,7 +302,7 @@ const getDataProviderWithCustomMethods = () => {
         data: { config },
         previousData: { id: 1 },
       });
-      return data.config as ConfigurationContextValue;
+      return signConfigLogos(data.config as ConfigurationContextValue);
     },
   } satisfies DataProvider;
 };
@@ -292,11 +314,86 @@ export type CrmDataProvider = ReturnType<
 const processConfigLogo = async (logo: any): Promise<string> => {
   if (typeof logo === "string") return logo;
   if (logo?.rawFile instanceof File) {
-    await uploadToBucket(logo);
-    return logo.src;
+    return (await uploadToBucket(logo, "shared")).src;
   }
   return logo?.src ?? "";
 };
+
+// Stored organisation logos are storage URLs whose signature expires, so
+// they are re-signed every time the configuration is read.
+const signConfigLogos = async (
+  config: ConfigurationContextValue,
+): Promise<ConfigurationContextValue> => ({
+  ...config,
+  ...(config.lightModeLogo && {
+    lightModeLogo: (await signUrl(config.lightModeLogo)) ?? "",
+  }),
+  ...(config.darkModeLogo && {
+    darkModeLogo: (await signUrl(config.darkModeLogo)) ?? "",
+  }),
+});
+
+/**
+ * Read callbacks that replace the stored URLs of a resource's files with
+ * fresh signed URLs, signing a whole page of records in one request.
+ */
+const signedReads = <R extends RaRecord>(
+  getFiles: (record: R) => RAFile[],
+  setFiles: (record: R, files: RAFile[]) => R,
+): Pick<
+  ResourceCallbacks<R>,
+  "afterGetList" | "afterGetMany" | "afterGetManyReference" | "afterGetOne"
+> => {
+  const signRecords = (records: R[]) =>
+    signRecordFiles(records, getFiles, setFiles);
+  return {
+    afterGetList: async (result) => ({
+      ...result,
+      data: await signRecords(result.data),
+    }),
+    afterGetMany: async (result) => ({
+      ...result,
+      data: await signRecords(result.data),
+    }),
+    afterGetManyReference: async (result) => ({
+      ...result,
+      data: await signRecords(result.data),
+    }),
+    afterGetOne: async (result) => ({
+      ...result,
+      data: (await signRecords([result.data]))[0],
+    }),
+  };
+};
+
+const signRecordFiles = async <R>(
+  records: R[],
+  getFiles: (record: R) => RAFile[],
+  setFiles: (record: R, files: RAFile[]) => R,
+): Promise<R[]> => {
+  const filesPerRecord = records.map(getFiles);
+  const signed = await signFiles(filesPerRecord.flat());
+  let offset = 0;
+  return records.map((record, index) => {
+    const count = filesPerRecord[index].length;
+    const files = signed.slice(offset, offset + count);
+    offset += count;
+    return count ? setFiles(record, files) : record;
+  });
+};
+
+const noteAttachmentReads = signedReads<ContactNote | DealNote>(
+  (note) => note.attachments ?? [],
+  (note, attachments) => ({ ...note, attachments }),
+);
+
+const getLogo = (company: { logo?: RAFile | null }) =>
+  company.logo ? [company.logo] : [];
+
+const companyLogoReads = signedReads<RaRecord & { logo?: RAFile | null }>(
+  getLogo,
+  (company, [logo]) => ({ ...company, logo }),
+);
 
 const lifeCycleCallbacks: ResourceCallbacks[] = [
   {
@@ -315,22 +412,24 @@ const lifeCycleCallbacks: ResourceCallbacks[] = [
     beforeSave: async (data: ContactNote, _, __) => {
       if (data.attachments) {
         data.attachments = await Promise.all(
-          data.attachments.map((fi) => uploadToBucket(fi)),
+          data.attachments.map((fi) => uploadToBucket(fi, "notes")),
         );
       }
       return data;
     },
+    ...noteAttachmentReads,
   },
   {
     resource: "deal_notes",
     beforeSave: async (data: DealNote, _, __) => {
       if (data.attachments) {
         data.attachments = await Promise.all(
-          data.attachments.map((fi) => uploadToBucket(fi)),
+          data.attachments.map((fi) => uploadToBucket(fi, "notes")),
         );
       }
       return data;
     },
+    ...noteAttachmentReads,
   },
   {
     resource: "sales",
@@ -339,10 +438,14 @@ const lifeCycleCallbacks: ResourceCallbacks[] = [
     },
     beforeSave: async (data: Sale, _, __) => {
       if (data.avatar) {
-        await uploadToBucket(data.avatar);
+        data.avatar = await uploadToBucket(data.avatar, "shared");
       }
       return data;
     },
+    ...signedReads<Sale>(
+      (sale) => (sale.avatar ? [sale.avatar] : []),
+      (sale, [avatar]) => ({ ...sale, avatar }),
+    ),
   },
   {
     resource: "contacts",
@@ -384,6 +487,7 @@ const lifeCycleCallbacks: ResourceCallbacks[] = [
     beforeUpdate: async (params) => {
       return await processCompanyLogo(params);
     },
+    ...companyLogoReads,
   },
   {
     resource: "contacts_summary",
@@ -442,65 +546,4 @@ const applyFullTextSearch = (columns: string[]) => (params: GetListParams) => {
       }, {}),
     },
   };
-};
-
-const uploadToBucket = async (fi: RAFile) => {
-  if (!fi.src.startsWith("blob:") && !fi.src.startsWith("data:")) {
-    // Sign URL check if path exists in the bucket
-    if (fi.path) {
-      const { error } = await getSupabaseClient()
-        .storage.from(ATTACHMENTS_BUCKET)
-        .createSignedUrl(fi.path, 60);
-
-      if (!error) {
-        return fi;
-      }
-    }
-  }
-
-  const dataContent = fi.src
-    ? await fetch(fi.src)
-        .then((res) => {
-          if (res.status !== 200) {
-            return null;
-          }
-          return res.blob();
-        })
-        .catch(() => null)
-    : fi.rawFile;
-
-  if (dataContent == null) {
-    // We weren't able to download the file from its src (e.g. user must be signed in on another website to access it)
-    // or the file has no content (not probable)
-    // In that case, just return it as is: when trying to download it, users should be redirected to the other website
-    // and see they need to be signed in. It will then be their responsibility to upload the file back to the note.
-    return fi;
-  }
-
-  const file = fi.rawFile;
-  const fileParts = file.name.split(".");
-  const fileExt = fileParts.length > 1 ? `.${file.name.split(".").pop()}` : "";
-  const fileName = `${Math.random()}${fileExt}`;
-  const filePath = `${fileName}`;
-  const { error: uploadError } = await getSupabaseClient()
-    .storage.from(ATTACHMENTS_BUCKET)
-    .upload(filePath, dataContent);
-
-  if (uploadError) {
-    console.error("uploadError", uploadError);
-    throw new Error("Failed to upload attachment");
-  }
-
-  const { data } = getSupabaseClient()
-    .storage.from(ATTACHMENTS_BUCKET)
-    .getPublicUrl(filePath);
-
-  fi.path = filePath;
-  fi.src = data.publicUrl;
-
-  // save MIME type
-  const mimeType = file.type;
-  fi.type = mimeType;
-
-  return fi;
 };

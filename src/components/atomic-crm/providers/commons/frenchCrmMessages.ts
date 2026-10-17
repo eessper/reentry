@@ -287,8 +287,14 @@ export const frenchCrmMessages = {
         email: "E-mail",
         secondary_email: "E-mail secondaire",
         secondary_emails: "E-mails secondaires",
-        administrator: "Admin",
+        role: "Rôle",
         disabled: "Désactivé",
+      },
+      roles: {
+        org_admin: "Administrateur de l'organisation",
+        clinical_lead: "Responsable clinique",
+        key_worker: "Référent",
+        viewer: "Lecteur",
       },
       create: {
         error:
@@ -580,11 +586,6 @@ export const frenchCrmMessages = {
         "Vous ne pouvez pas ajouter plus de 10 adresses e-mail secondaires",
       secondary_emails_help:
         "Autres adresses depuis lesquelles vous envoyez des e-mails. Laissez-en une vide pour la supprimer.",
-      inbound: {
-        description:
-          "Vous pouvez commencer à envoyer des e-mails vers l'adresse de réception de votre serveur, par exemple en l'ajoutant au champ %{field}. Atomic CRM traitera les e-mails et ajoutera des notes aux contacts correspondants.",
-        title: "E-mail entrant",
-      },
       mcp: {
         title: "Serveur MCP",
         description:

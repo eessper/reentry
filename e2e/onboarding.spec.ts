@@ -14,7 +14,7 @@ test("user onboarding", async ({
     first_name: "John",
     last_name: "Doe",
     password: "password",
-    administrator: true,
+    role: "org_admin",
   });
 
   await page.goto("/");
