@@ -8,42 +8,60 @@ CREATE OR REPLACE FUNCTION "public"."cleanup_note_attachments"() RETURNS "trigge
     SET "search_path" TO ''
     AS $$
     DECLARE
-      payload jsonb;
+      queued integer;
       request_headers jsonb;
       auth_header text;
     BEGIN
+      -- Queue the files this change orphaned. Only paths inside the note's own
+      -- organisation folder qualify, and only when no other note still uses
+      -- them, so a crafted attachments array can't get anyone else's file
+      -- deleted. The delete_note_attachments edge function drains the queue;
+      -- it never takes paths from the request.
+      INSERT INTO public.storage_deletion_queue (path, organisation_id)
+      SELECT DISTINCT removed.path, OLD.organisation_id
+      FROM unnest(OLD.attachments) AS old_attachment
+        CROSS JOIN LATERAL (SELECT old_attachment ->> 'path' AS path) AS removed
+      WHERE removed.path LIKE OLD.organisation_id::text || '/notes/%'
+        AND (
+          TG_OP = 'DELETE'
+          OR NOT EXISTS (
+            SELECT 1 FROM unnest(NEW.attachments) AS new_attachment
+            WHERE new_attachment ->> 'path' = removed.path
+          )
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM public.contact_notes n, unnest(n.attachments) AS a
+          WHERE a ->> 'path' = removed.path
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM public.deal_notes n, unnest(n.attachments) AS a
+          WHERE a ->> 'path' = removed.path
+        )
+      ON CONFLICT (path) DO NOTHING;
+      GET DIAGNOSTICS queued = ROW_COUNT;
+
       request_headers := coalesce(
         nullif(current_setting('request.headers', true), '')::jsonb,
         '{}'::jsonb
       );
       auth_header := request_headers ->> 'authorization';
 
-      IF auth_header IS NULL OR auth_header = '' THEN
-        IF TG_OP = 'DELETE' THEN
-          RETURN OLD;
-        END IF;
-
-        RETURN NEW;
+      -- Wake the edge function up. Without a caller token (SQL, service role)
+      -- the files stay queued until the next wake-up.
+      IF queued > 0 AND auth_header IS NOT NULL AND auth_header <> '' THEN
+        PERFORM net.http_post(
+          url := public.get_note_attachments_function_url(),
+          body := '{}'::jsonb,
+          params := '{}'::jsonb,
+          headers := jsonb_build_object(
+            'Content-Type',
+            'application/json',
+            'Authorization',
+            auth_header
+          ),
+          timeout_milliseconds := 10000
+        );
       END IF;
-
-      payload := jsonb_build_object(
-        'old_record', OLD,
-        'record', NEW,
-        'type', TG_OP
-      );
-
-      PERFORM net.http_post(
-        url := public.get_note_attachments_function_url(),
-        body := payload,
-        params := '{}'::jsonb,
-        headers := jsonb_build_object(
-          'Content-Type',
-          'application/json',
-          'Authorization',
-          auth_header
-        ),
-        timeout_milliseconds := 10000
-      );
 
       IF TG_OP = 'DELETE' THEN
         RETURN OLD;
@@ -259,13 +277,12 @@ begin
   insert into public.memberships (organisation_id, user_id, role)
   values (new_organisation_id, new.id, new_role);
 
-  insert into public.sales (first_name, last_name, email, user_id, administrator, organisation_id)
+  insert into public.sales (first_name, last_name, email, user_id, organisation_id)
   values (
     coalesce(new.raw_user_meta_data ->> 'first_name', new.raw_user_meta_data -> 'custom_claims' ->> 'first_name', 'Pending'),
     coalesce(new.raw_user_meta_data ->> 'last_name', new.raw_user_meta_data -> 'custom_claims' ->> 'last_name', 'Pending'),
     new.email,
     new.id,
-    new_role = 'org_admin',
     new_organisation_id
   );
   return new;
@@ -278,25 +295,6 @@ CREATE OR REPLACE FUNCTION "public"."handle_organisation_created"() RETURNS "tri
     AS $$
 begin
   insert into public.configuration (organisation_id) values (new.id);
-  return new;
-end;
-$$;
-
-CREATE OR REPLACE FUNCTION "public"."handle_sale_administrator_changed"() RETURNS "trigger"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO ''
-    AS $$
-begin
-  -- Keeps memberships.role in step with the legacy sales.administrator flag
-  -- that the existing admin screens and the users edge function still set.
-  -- Session 2 removes sales.administrator and this trigger.
-  update public.memberships
-  set role = case
-    when new.administrator then 'org_admin'::public.membership_role
-    when role = 'org_admin' then 'key_worker'::public.membership_role
-    else role
-  end
-  where user_id = new.user_id;
   return new;
 end;
 $$;
@@ -486,6 +484,12 @@ BEGIN
 
   -- 6. Delete loser contact
   DELETE FROM contacts WHERE id = loser_id;
+
+  -- Row-level security only lets org admins and clinical leads delete
+  -- contacts; anyone else would get a half-applied merge, so undo it all.
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Not allowed to merge contacts' USING ERRCODE = '42501';
+  END IF;
 
   RETURN winner_id;
 END;

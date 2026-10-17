@@ -69,11 +69,6 @@ revoke all on function public.handle_organisation_created() from anon;
 revoke all on function public.handle_organisation_created() from authenticated;
 grant all on function public.handle_organisation_created() to service_role;
 
-revoke all on function public.handle_sale_administrator_changed() from public;
-revoke all on function public.handle_sale_administrator_changed() from anon;
-revoke all on function public.handle_sale_administrator_changed() from authenticated;
-grant all on function public.handle_sale_administrator_changed() to service_role;
-
 grant all on function public.is_admin() to anon;
 grant all on function public.is_admin() to authenticated;
 grant all on function public.is_admin() to service_role;
@@ -217,3 +212,31 @@ alter default privileges for role postgres in schema public grant all on tables 
 alter default privileges for role postgres in schema public grant all on tables to anon;
 alter default privileges for role postgres in schema public grant all on tables to authenticated;
 alter default privileges for role postgres in schema public grant all on tables to service_role;
+
+-- Role helpers (02_roles.sql)
+revoke all on function private.current_sales_id() from public;
+revoke all on function private.current_sales_id() from anon;
+grant execute on function private.current_sales_id() to authenticated;
+grant execute on function private.current_sales_id() to service_role;
+
+revoke all on function private.sees_all_records() from public;
+revoke all on function private.sees_all_records() from anon;
+grant execute on function private.sees_all_records() to authenticated;
+grant execute on function private.sees_all_records() to service_role;
+
+revoke all on function private.is_case_staff() from public;
+revoke all on function private.is_case_staff() from anon;
+grant execute on function private.is_case_staff() to authenticated;
+grant execute on function private.is_case_staff() to service_role;
+
+revoke all on function private.can_access_assigned(uuid, bigint) from public;
+revoke all on function private.can_access_assigned(uuid, bigint) from anon;
+grant execute on function private.can_access_assigned(uuid, bigint) to authenticated;
+grant execute on function private.can_access_assigned(uuid, bigint) to service_role;
+
+-- Staff with roles: signed-in users only (RLS limits it to their organisation)
+revoke all on table public.sales_summary from anon;
+revoke all on table public.sales_summary from authenticated;
+grant select on table public.sales_summary to authenticated;
+grant select on table public.sales_summary to service_role;
+

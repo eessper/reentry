@@ -13,7 +13,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(72);
+select plan(74);
 
 -- Deferred triggers (handle_new_user) fire at the end of each statement
 -- instead of at commit, which this transaction never reaches.
@@ -127,8 +127,8 @@ select * from pg_temp.check_isolation('tags',
 select * from pg_temp.check_isolation('tasks',
     $$insert into public.tasks (contact_id, text, organisation_id) values (9101, 'Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
 select * from pg_temp.check_isolation('sales',
-    $$insert into public.sales (first_name, last_name, email, administrator, user_id, organisation_id)
-      values ('Sneaky', 'User', 'sneaky@bravo.test', true, 'a0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-000000000000')$$);
+    $$insert into public.sales (first_name, last_name, email, user_id, organisation_id)
+      values ('Sneaky', 'User', 'sneaky@bravo.test', 'a0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-000000000000')$$);
 
 -- Moving one of your own rows into another organisation
 select throws_ok(
@@ -143,18 +143,20 @@ select is(
     'a0000000-0000-0000-0000-000000000000'::uuid,
     'tags: rows inserted without an organisation get the caller''s organisation');
 
--- Links across organisations are refused by the composite foreign keys
+-- Links across organisations are refused. Notes and tasks are refused first
+-- by row-level security (their parent must be visible); the composite foreign
+-- keys are the backstop, checked again below as the database owner.
 select throws_ok(
     $$insert into public.contacts (first_name, company_id) values ('Linked', 9101)$$,
     '23503', null,
     'contacts: cannot attach a contact to a Bravo company');
 select throws_ok(
     $$insert into public.contact_notes (contact_id, text) values (9101, 'Linked')$$,
-    '23503', null,
+    '42501', null,
     'contact_notes: cannot attach a note to a Bravo contact');
 select throws_ok(
     $$insert into public.tasks (contact_id, text) values (9101, 'Linked')$$,
-    '23503', null,
+    '42501', null,
     'tasks: cannot attach a task to a Bravo contact');
 select throws_ok(
     $$insert into public.deals (name, stage, company_id) values ('Linked', 'opportunity', 9101)$$,
@@ -162,7 +164,7 @@ select throws_ok(
     'deals: cannot attach a deal to a Bravo company');
 select throws_ok(
     $$insert into public.deal_notes (deal_id, text) values (9101, 'Linked')$$,
-    '23503', null,
+    '42501', null,
     'deal_notes: cannot attach a note to a Bravo deal');
 select throws_ok(
     format('update public.contacts set sales_id = %s where id = 9001', (select bob_sales_id from ids)),
@@ -278,15 +280,30 @@ select is(
     (select config ->> 'title' from public.configuration where organisation_id = 'a0000000-0000-0000-0000-000000000000'), 'Alpha',
     'Alpha configuration kept the admin''s change and not the key worker''s');
 
+-- The composite foreign keys refuse cross-organisation links even where
+-- row-level security doesn't apply (service role, triggers)
+select throws_ok(
+    $$insert into public.contact_notes (contact_id, text, organisation_id) values (9101, 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
+    '23503', null,
+    'contact_notes: foreign key refuses an Alpha note on a Bravo contact, even without RLS');
+select throws_ok(
+    $$insert into public.tasks (contact_id, text, organisation_id) values (9101, 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
+    '23503', null,
+    'tasks: foreign key refuses an Alpha task on a Bravo contact, even without RLS');
+select throws_ok(
+    $$insert into public.deal_notes (deal_id, text, organisation_id) values (9101, 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
+    '23503', null,
+    'deal_notes: foreign key refuses an Alpha note on a Bravo deal, even without RLS');
+
 -------------------------------------------------------------------------------
 -- Account creation
 -------------------------------------------------------------------------------
 
 select results_eq(
-    $$select m.role::text, s.administrator, s.organisation_id
+    $$select m.role::text, s.organisation_id
       from public.memberships m join public.sales s on s.user_id = m.user_id
       where m.user_id = 'a0000000-0000-0000-0000-0000000000a2'$$,
-    $$values ('key_worker', false, 'a0000000-0000-0000-0000-000000000000'::uuid)$$,
+    $$values ('key_worker', 'a0000000-0000-0000-0000-000000000000'::uuid)$$,
     'new user: membership and staff profile created in the organisation from app_metadata, defaulting to key_worker');
 
 select throws_ok(
@@ -295,11 +312,6 @@ select throws_ok(
               'stranger@example.test', '{"organisation_id": "a0000000-0000-0000-0000-000000000000"}', '{"provider": "email"}', now(), now())$$,
     'P0001', null,
     'self-signup: a user without an organisation in app_metadata is refused, even with one forged in user metadata');
-
-update public.sales set administrator = true where email = 'aaron@alpha.test';
-select is(
-    (select role::text from public.memberships where user_id = 'a0000000-0000-0000-0000-0000000000a2'), 'org_admin',
-    'admin flag: making a staff member administrator promotes their membership to org_admin');
 
 select * from finish();
 rollback;
