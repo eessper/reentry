@@ -148,7 +148,16 @@ async function mergeContacts(
         .execute();
 
       // 6. Delete loser contact
-      await trx.deleteFrom("contacts").where("id", "=", loserId).execute();
+      // Row-level security only lets org admins and clinical leads delete
+      // contacts. For anyone else nothing is deleted: throw so the whole
+      // transaction rolls back instead of leaving a half-applied merge.
+      const { numDeletedRows } = await trx
+        .deleteFrom("contacts")
+        .where("id", "=", loserId)
+        .executeTakeFirstOrThrow();
+      if (numDeletedRows === 0n) {
+        throw new Error("Not allowed to merge contacts");
+      }
 
       return { success: true, winnerId };
     });
