@@ -34,6 +34,8 @@ Atomic CRM is a **single-team** CRM. Every finding below is a problem for a mult
 | F6 | The `attachments` storage bucket is **public**: anyone with a file's URL can download it without logging in, and any logged-in user can list every file. | Critical | **Session 2** (needs signed URLs in the frontend) |
 | F7 | Saving a contact sends a hash of their email to **gravatar.com** and their email domain to **favicon.show** (US services). That breaches the UK/EU residency rule. | High | **Session 3** (new `service_users` table has no such trigger; contacts are retired) |
 | F8 | `contacts.tags` and `deals.contact_ids` are arrays of ids with no foreign key, so they can hold ids from another organisation. RLS still hides the other organisation's rows, so nothing leaks, but the data is untidy. | Low | Retired with the CRM tables in Session 3 |
+| F9 | The `delete_note_attachments` edge function accepts any signed-in user's token and deletes whatever storage paths it is given, in any organisation. | High | **Session 2**, with the storage fix (F6) |
+| F10 | The `postmark` inbound-email function writes contacts and notes with the service role. After Session 1 those writes fail (no organisation to stamp), so it fails closed; it must be removed or tenant-scoped before deployment. | Medium | **Session 2** |
 
 **Until F6 and F7 are fixed, do not upload files or put any real-looking contact emails into the CRM screens.** Phase 1 is synthetic data only anyway.
 
@@ -59,14 +61,15 @@ These are `SECURITY DEFINER` with an empty `search_path`, so they can read `memb
 - Gets one RLS rule: rows are visible and writable only when `organisation_id = private.current_organisation_id()`. A user with no membership sees nothing and can write nothing.
 - References to other tenant rows use **composite foreign keys** `(parent_id, organisation_id) → parent(id, organisation_id)`, so the database itself refuses cross-organisation links, even for the service role.
 
-Tables covered in Session 1: `sales`, `companies`, `contacts`, `contact_notes`, `deals`, `deal_notes`, `tags`, `tasks`, `configuration`, `favicons_excluded_domains`. These are the CRM tables that exist today; making them tenant-safe now means the running app is safe throughout Phase 1, even though most will be retired in Session 3.
+Tables covered in Session 1: `sales`, `companies`, `contacts`, `contact_notes`, `deals`, `deal_notes`, `tags`, `tasks`, `configuration`. `favicons_excluded_domains` stays shared reference data (a list of webmail domains): every signed-in user can read it, only the service role can change it. These are the CRM tables that exist today; making them tenant-safe now means the running app is safe throughout Phase 1, even though most will be retired in Session 3.
 
 ### Users and organisations
 
-- New users get their organisation from `raw_app_meta_data.organisation_id`, which only the service role can set. `raw_user_meta_data` is user-editable and is never trusted for this.
+- New users get their organisation from `raw_app_meta_data.organisation_id` (and optionally `role`), which only the service role can set. `raw_user_meta_data` is user-editable and is never trusted for this.
+- `handle_new_user` runs as a **deferred constraint trigger** (at commit), because Supabase Auth inserts the user first and writes `app_metadata` in a second statement.
 - A new auth user with no organisation in their app metadata is **rejected** by the `handle_new_user` trigger. That closes open signup (F3) at the database level, whatever the Auth settings say.
 - The `users` edge function puts invited users into the inviting admin's organisation, and refuses to read or change users in another organisation (F2).
-- The first organisation and its first admin are created by an operator script using the service role (see `scripts/` and `CLAUDE.md`), not through the app.
+- The first organisation and its first admin are created by an operator script using the service role (`scripts/create-organisation.mjs`, see `CLAUDE.md`), not through the app.
 
 ### Roles in Session 1
 

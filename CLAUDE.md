@@ -1,5 +1,24 @@
 @AGENTS.md
 
+# Re-entry project notes (read first)
+
+This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHASE1_BRIEF.md` (what we're building, the session plan) and `docs/ARCHITECTURE.md` (how the code maps to it, and the open security findings F1–F10). Phase 1 uses **synthetic data only**.
+
+## Tenancy (Session 1, done)
+
+- Every tenant table has `organisation_id uuid not null default private.current_organisation_id()` and one RLS policy: `organisation_id = (select private.current_organisation_id())`. **Any new tenant table must follow the same pattern**, plus a `unique (id, organisation_id)` key and composite foreign keys `(parent_id, organisation_id)` for references to other tenant rows.
+- Add each new tenant table to `supabase/tests/tenancy_isolation.test.sql` (one `pg_temp.check_isolation(...)` call) and bump `plan(...)`.
+- One organisation per user (`memberships.user_id` is unique). Roles live in `memberships.role`; `sales.administrator` is a legacy mirror kept in sync by a trigger until Session 2 removes it.
+- Accounts are only created with `app_metadata.organisation_id` (service role). Open self-signup is rejected by the deferred `on_auth_user_created` constraint trigger. Create an organisation and its first admin with:
+  `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/create-organisation.mjs --name "<org>" --email <admin> [--password <pw>]`
+- Edge functions use the service role and **bypass RLS**: any new function must check the caller's organisation itself (see `supabase/functions/users/permissions.ts`).
+
+## Database workflow in cloud sessions
+
+- Docker may not be running: start it with `dockerd` as a background command, then `npx supabase start`.
+- `npx supabase db diff` (migra) can't reach npm from inside its container here. Hand-write migrations, then confirm they match `supabase/schemas/` with `npx supabase db diff --local --use-pg-schema`. That engine always reports a spurious `DROP EXTENSION "pgjwt"` and some pre-existing grant differences; nothing else should appear.
+- Run database tests with `make test-db`; frontend and function tests with `make test`.
+
 # Agent Workflow
 
 Code-change requests can run through the **agent harness**: subagents (planner, developer, quality-reviewer, merger, documentator) implementing the change via a deterministic foreground pipeline in git worktrees. **Opt-in, off by default;** otherwise the main thread implements the change itself.

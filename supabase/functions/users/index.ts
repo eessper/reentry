@@ -4,6 +4,7 @@ import { corsHeaders, OptionsMiddleware } from "../_shared/cors.ts";
 import { createErrorResponse } from "../_shared/utils.ts";
 import { AuthMiddleware, UserMiddleware } from "../_shared/authentication.ts";
 import { getUserSale } from "../_shared/getUserSale.ts";
+import { canEditProfile, isVisibleTo } from "./permissions.ts";
 import {
   findInvalidEmail,
   MAX_SECONDARY_EMAILS,
@@ -199,12 +200,12 @@ async function patchUser(req: Request, currentUserSale: any) {
 
   // A user outside the caller's organisation is reported as not found, so
   // the response doesn't confirm that the id exists elsewhere.
-  if (!sale || sale.organisation_id !== currentUserSale.organisation_id) {
+  if (!isVisibleTo(currentUserSale, sale)) {
     return createErrorResponse(404, "Not Found");
   }
 
   // Users can only update their own profile unless they are an administrator
-  if (!currentUserSale.administrator && currentUserSale.id !== sale.id) {
+  if (!canEditProfile(currentUserSale, sale)) {
     return createErrorResponse(401, "Not Authorized");
   }
 
