@@ -115,6 +115,9 @@ test-app:
 test-functions:
 	npm run test:unit:functions
 
+test-db: ## run the database tests (tenancy isolation) against the local Supabase stack
+	npx supabase test db
+
 test-e2e: start-e2e
 	npx playwright test --ui
 

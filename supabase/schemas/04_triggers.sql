@@ -76,10 +76,24 @@ create or replace trigger on_tag_deleted
     for each row execute function public.handle_tag_deleted();
 
 -- Auth triggers: sync auth.users to public.sales
-create or replace trigger on_auth_user_created
+-- Deferred to commit so it sees the app_metadata Auth writes after the insert
+create constraint trigger on_auth_user_created
     after insert on auth.users
+    deferrable initially deferred
     for each row execute function public.handle_new_user();
 
 create or replace trigger on_auth_user_updated
     after update on auth.users
     for each row execute function public.handle_update_user();
+
+-- Every organisation gets its own configuration row
+create or replace trigger on_organisation_created
+    after insert on public.organisations
+    for each row execute function public.handle_organisation_created();
+
+-- Keep memberships.role in step with the legacy sales.administrator flag (removed in Session 2)
+create or replace trigger on_sale_administrator_changed
+    after update of administrator on public.sales
+    for each row
+    when (old.administrator is distinct from new.administrator)
+    execute function public.handle_sale_administrator_changed();

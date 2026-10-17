@@ -1,17 +1,30 @@
 import { test, expect } from "./fixtures";
 
-test("user onboarding", async ({ page, isMobile, menu, dismissToast }) => {
+test("user onboarding", async ({
+  page,
+  isMobile,
+  menu,
+  dismissToast,
+  createSales,
+}) => {
+  // Re-entry has no self-signup: an organisation's first admin is created by
+  // an operator (scripts/create-organisation.mjs), then signs in.
+  await createSales({
+    email: "john@doe.com",
+    first_name: "John",
+    last_name: "Doe",
+    password: "password",
+    administrator: true,
+  });
+
   await page.goto("/");
 
   // Expect a title "to contain" a substring.
   await expect(page).toHaveTitle(/Atomic CRM/);
-  await expect(page.getByText("Welcome to Atomic CRM")).toBeVisible();
 
-  await page.getByLabel("First name").fill("John");
-  await page.getByLabel("Last name").fill("Doe");
   await page.getByLabel("Email").fill("john@doe.com");
   await page.getByLabel("Password").fill("password");
-  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
 
   await expect(page.getByText("What's next?")).toBeVisible();
   await expect(page.getByText("1/3 done")).toBeVisible();

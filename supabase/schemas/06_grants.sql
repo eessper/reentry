@@ -9,6 +9,21 @@ grant usage on schema public to anon;
 grant usage on schema public to authenticated;
 grant usage on schema public to service_role;
 
+-- Private schema: holds the tenancy helpers that RLS policies call. It is not
+-- exposed through the API, but signed-in requests need USAGE to evaluate policies.
+grant usage on schema private to authenticated;
+grant usage on schema private to service_role;
+
+revoke all on function private.current_organisation_id() from public;
+revoke all on function private.current_organisation_id() from anon;
+grant execute on function private.current_organisation_id() to authenticated;
+grant execute on function private.current_organisation_id() to service_role;
+
+revoke all on function private.current_membership_role() from public;
+revoke all on function private.current_membership_role() from anon;
+grant execute on function private.current_membership_role() to authenticated;
+grant execute on function private.current_membership_role() to service_role;
+
 -- Function grants
 grant all on function public.cleanup_note_attachments() to anon;
 grant all on function public.cleanup_note_attachments() to authenticated;
@@ -49,6 +64,16 @@ grant all on function public.handle_update_user() to anon;
 grant all on function public.handle_update_user() to authenticated;
 grant all on function public.handle_update_user() to service_role;
 
+revoke all on function public.handle_organisation_created() from public;
+revoke all on function public.handle_organisation_created() from anon;
+revoke all on function public.handle_organisation_created() from authenticated;
+grant all on function public.handle_organisation_created() to service_role;
+
+revoke all on function public.handle_sale_administrator_changed() from public;
+revoke all on function public.handle_sale_administrator_changed() from anon;
+revoke all on function public.handle_sale_administrator_changed() from authenticated;
+grant all on function public.handle_sale_administrator_changed() to service_role;
+
 grant all on function public.is_admin() to anon;
 grant all on function public.is_admin() to authenticated;
 grant all on function public.is_admin() to service_role;
@@ -66,6 +91,19 @@ grant all on function public.set_sales_id_default() to authenticated;
 grant all on function public.set_sales_id_default() to service_role;
 
 -- Table grants
+
+-- Tenancy tables: read-only for signed-in users (RLS limits it to their own
+-- organisation); only the service role creates organisations and memberships.
+revoke all on table public.organisations from anon;
+revoke all on table public.organisations from authenticated;
+grant select on table public.organisations to authenticated;
+grant all on table public.organisations to service_role;
+
+revoke all on table public.memberships from anon;
+revoke all on table public.memberships from authenticated;
+grant select on table public.memberships to authenticated;
+grant all on table public.memberships to service_role;
+
 grant all on table public.companies to anon;
 grant all on table public.companies to authenticated;
 grant all on table public.companies to service_role;
@@ -124,6 +162,10 @@ grant all on table public.init_state to authenticated;
 grant all on table public.init_state to service_role;
 
 -- Sequence grants
+revoke all on sequence public.memberships_id_seq from anon;
+revoke all on sequence public.memberships_id_seq from authenticated;
+grant all on sequence public.memberships_id_seq to service_role;
+
 grant all on sequence public.companies_id_seq to anon;
 grant all on sequence public.companies_id_seq to authenticated;
 grant all on sequence public.companies_id_seq to service_role;
