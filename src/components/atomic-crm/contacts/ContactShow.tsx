@@ -32,6 +32,7 @@ import type { Contact } from "../types";
 import { Avatar } from "./Avatar";
 import { ContactAside } from "./ContactAside";
 import { MobileBackButton } from "../misc/MobileBackButton";
+import { useLogRecordView } from "../misc/useLogRecordView";
 
 export const ContactShow = (props: ShowBaseProps = {}) => {
   const isMobile = useIsMobile();
@@ -49,9 +50,16 @@ export const ContactShow = (props: ShowBaseProps = {}) => {
       }}
       {...props}
     >
+      <LogContactView />
       {isMobile ? <ContactShowContentMobile /> : <ContactShowContent />}
     </ShowBase>
   );
+};
+
+const LogContactView = () => {
+  const { record } = useShowContext<Contact>();
+  useLogRecordView("contacts", record?.id);
+  return null;
 };
 
 const MOBILE_TABS = ["notes", "tasks", "details"];

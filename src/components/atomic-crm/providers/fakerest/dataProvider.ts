@@ -322,6 +322,8 @@ export const createDataProvider = ({
         maxResults,
       );
     },
+    // The demo has no audit log
+    logRecordView: async () => undefined,
     mergeContacts: async (sourceId: Identifier, targetId: Identifier) => {
       return mergeContacts(sourceId, targetId, baseDataProvider);
     },
@@ -366,9 +368,9 @@ export const createDataProvider = ({
         resource: "sales",
         beforeCreate: async (params) => {
           const { data } = params;
-          // If administrator role is not set, we simply set it to false
-          if (data.administrator == null) {
-            data.administrator = false;
+          // New staff are key workers unless a role is given
+          if (data.role == null) {
+            data.role = "key_worker";
           }
           return params;
         },
