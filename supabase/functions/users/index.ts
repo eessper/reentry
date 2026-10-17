@@ -34,29 +34,6 @@ async function updateSaleAdministrator(
   return sales.at(0);
 }
 
-async function createSale(
-  user_id: string,
-  data: {
-    email: string;
-    password: string;
-    first_name: string;
-    last_name: string;
-    disabled: boolean;
-    administrator: boolean;
-  },
-) {
-  const { data: sales, error: salesError } = await supabaseAdmin
-    .from("sales")
-    .insert({ ...data, user_id })
-    .select("*");
-
-  if (!sales?.length || salesError) {
-    console.error("Error creating user:", salesError);
-    throw salesError ?? new Error("Failed to create sale");
-  }
-  return sales.at(0);
-}
-
 async function findEmailUsedByAnotherSale(
   emails: string[],
   excludeSalesId?: number,
@@ -145,90 +122,44 @@ async function inviteUser(req: Request, currentUserSale: any) {
     );
   }
 
+  // The organisation goes in app_metadata, which only the service role can
+  // write; the database's handle_new_user trigger reads it to create the
+  // membership and staff profile in the inviting admin's organisation.
   const { data, error: userError } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
     user_metadata: { first_name, last_name },
+    app_metadata: {
+      organisation_id: currentUserSale.organisation_id,
+      role: administrator ? "org_admin" : "key_worker",
+    },
   });
 
-  let user = data?.user;
-
-  if (!user && userError?.code === "email_exists") {
-    // This may happen if users cleared their database but not the users
-    // We have to create the sale directly
-    const { data, error } = await supabaseAdmin.rpc("get_user_id_by_email", {
+  if (userError?.code === "email_exists") {
+    // Every account belongs to exactly one organisation, so an existing
+    // account can't be re-used here: it may belong to another organisation.
+    return createErrorResponse(409, "Email already used by another user", {
+      code: "email_taken",
       email,
     });
+  }
+  if (userError) {
+    console.error(`Error inviting user: user_error=${userError}`);
+    return createErrorResponse(userError.status, userError.message, {
+      code: userError.code,
+    });
+  }
+  const user = data?.user;
+  if (!user) {
+    console.error("Error inviting user: undefined user");
+    return createErrorResponse(500, "Internal Server Error");
+  }
+  const { error: emailError } =
+    await supabaseAdmin.auth.admin.inviteUserByEmail(email);
 
-    if (!data || error) {
-      console.error(
-        `Error inviting user: error=${error ?? "could not fetch users for email"}`,
-      );
-      return createErrorResponse(500, "Internal Server Error");
-    }
-
-    user = data[0];
-    try {
-      const { data: existingSale, error: salesError } = await supabaseAdmin
-        .from("sales")
-        .select("*")
-        .eq("user_id", user.id);
-      if (salesError) {
-        return createErrorResponse(salesError.status, salesError.message, {
-          code: salesError.code,
-        });
-      }
-      if (existingSale.length > 0) {
-        return createErrorResponse(
-          400,
-          "A sales for this email already exists",
-        );
-      }
-
-      const sale = await createSale(user.id, {
-        email,
-        password,
-        first_name,
-        last_name,
-        disabled,
-        administrator,
-      });
-
-      return new Response(
-        JSON.stringify({
-          data: sale,
-        }),
-        {
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        },
-      );
-    } catch (error) {
-      return createErrorResponse(
-        (error as any).status ?? 500,
-        (error as Error).message,
-        {
-          code: (error as any).code,
-        },
-      );
-    }
-  } else {
-    if (userError) {
-      console.error(`Error inviting user: user_error=${userError}`);
-      return createErrorResponse(userError.status, userError.message, {
-        code: userError.code,
-      });
-    }
-    if (!data?.user) {
-      console.error("Error inviting user: undefined user");
-      return createErrorResponse(500, "Internal Server Error");
-    }
-    const { error: emailError } =
-      await supabaseAdmin.auth.admin.inviteUserByEmail(email);
-
-    if (emailError) {
-      console.error(`Error inviting user, email_error=${emailError}`);
-      return createErrorResponse(500, "Failed to send invitation mail");
-    }
+  if (emailError) {
+    console.error(`Error inviting user, email_error=${emailError}`);
+    return createErrorResponse(500, "Failed to send invitation mail");
   }
 
   try {
@@ -266,7 +197,9 @@ async function patchUser(req: Request, currentUserSale: any) {
     .eq("id", sales_id)
     .single();
 
-  if (!sale) {
+  // A user outside the caller's organisation is reported as not found, so
+  // the response doesn't confirm that the id exists elsewhere.
+  if (!sale || sale.organisation_id !== currentUserSale.organisation_id) {
     return createErrorResponse(404, "Not Found");
   }
 
