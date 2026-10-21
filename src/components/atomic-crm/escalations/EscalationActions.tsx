@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNotify, useTranslate, useUpdate } from "ra-core";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ export const EscalationActions = ({
 }) => {
   const translate = useTranslate();
   const notify = useNotify();
+  const queryClient = useQueryClient();
   const [update, { isPending }] = useUpdate<Escalation>();
   const [isResolving, setIsResolving] = useState(false);
   const [notes, setNotes] = useState(escalation.notes ?? "");
@@ -44,6 +46,16 @@ export const EscalationActions = ({
         onSuccess: () => {
           setIsResolving(false);
           notify(`resources.escalations.notifications.${status}`);
+          // The update only patches the cached record: refetch so a resolved
+          // escalation leaves the queue, and the counts and status dots follow.
+          for (const queryKey of [
+            ["escalations"],
+            ["service_users"],
+            ["controlTowerStats"],
+            ["serviceUserHistory"],
+          ]) {
+            queryClient.invalidateQueries({ queryKey });
+          }
         },
         onError: (error) =>
           notify(error instanceof Error ? error.message : String(error), {

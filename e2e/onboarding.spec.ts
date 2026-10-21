@@ -29,6 +29,8 @@ test("an org admin lands on the Control Tower and can manage the team", async ({
   test.skip(isMobile, "Team management is a desktop screen");
 
   await page.getByRole("link", { name: "Team" }).click();
-  await expect(page.getByText("Kim")).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "Kim", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Key worker")).toBeVisible();
 });
