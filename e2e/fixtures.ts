@@ -7,8 +7,13 @@ const adminSupabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } },
 );
 
-// Tables in FK-safe deletion order (children before parents)
+// Tables in FK-safe deletion order (children before parents). audit_log is
+// append-only and has no foreign keys, so it is left alone.
 const TABLES = [
+  "activity_events",
+  "escalations",
+  "support_profiles",
+  "service_users",
   "tasks",
   "contact_notes",
   "deal_notes",
@@ -22,6 +27,8 @@ const TABLES = [
   "memberships",
   "organisations",
 ];
+
+type Role = "org_admin" | "clinical_lead" | "key_worker" | "viewer";
 
 // Every account and record belongs to an organisation. Each test gets one,
 // created on first use after the reset.
@@ -56,30 +63,7 @@ async function resetDb() {
   );
 }
 
-async function createUser({
-  email,
-  password,
-}: {
-  email: string;
-  password: string;
-}) {
-  const { data, error } = await adminSupabase.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    app_metadata: {
-      organisation_id: await getOrganisationId(),
-      role: "org_admin",
-    },
-  });
-
-  if (error) {
-    throw new Error(`Failed to create user: ${error.message}`);
-  }
-
-  return data.user;
-}
-
+/** Creates a member of the test organisation and returns their staff profile. */
 async function createSales({
   first_name,
   last_name,
@@ -91,7 +75,7 @@ async function createSales({
   last_name: string;
   email: string;
   password: string;
-  role?: "org_admin" | "clinical_lead" | "key_worker" | "viewer";
+  role?: Role;
 }) {
   const { data: userData, error: userError } =
     await adminSupabase.auth.admin.createUser({
@@ -101,10 +85,7 @@ async function createSales({
       // Names live in user_metadata, like accounts invited from the app:
       // the auth sync trigger copies them onto the staff profile on sign-in.
       user_metadata: { first_name, last_name },
-      app_metadata: {
-        organisation_id: await getOrganisationId(),
-        role,
-      },
+      app_metadata: { organisation_id: await getOrganisationId(), role },
     });
 
   if (userError) {
@@ -125,143 +106,102 @@ async function createSales({
   return data;
 }
 
-async function createNotes({
-  contactId,
-  salesId,
+async function createServiceUser({
+  display_name,
+  reference_code,
+  assigned_worker_id,
+  risk_tier = "moderate",
+  days_since_release = 5,
+}: {
+  display_name: string;
+  reference_code: string;
+  assigned_worker_id: number;
+  risk_tier?: "low" | "moderate" | "moderate_high" | "high";
+  days_since_release?: number;
+}) {
+  const release = new Date(Date.now() - days_since_release * 86_400_000);
+  const { data, error } = await adminSupabase
+    .from("service_users")
+    .insert({
+      organisation_id: await getOrganisationId(),
+      display_name,
+      reference_code,
+      assigned_worker_id,
+      risk_tier,
+      release_date: release.toISOString().slice(0, 10),
+      consent_status: "given",
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create service user: ${error.message}`);
+  }
+  return data;
+}
+
+async function createEscalation({
+  service_user_id,
+  severity = "high",
+  trigger_type = "keyword",
   notes,
 }: {
-  contactId: string | number;
-  salesId: string | number;
-  notes: {
-    text: string;
-    date?: string;
-    status?: "cold" | "warm" | "hot";
-  }[];
-}) {
-  if (notes.length === 0) return;
-
-  const organisation_id = await getOrganisationId();
-  const { error } = await adminSupabase.from("contact_notes").insert(
-    notes.map(({ text, date, status = "cold" }) => ({
-      contact_id: contactId,
-      sales_id: salesId,
-      organisation_id,
-      text,
-      date,
-      status,
-    })),
-  );
-
-  if (error) {
-    throw new Error(`Failed to create notes: ${error.message}`);
-  }
-}
-
-async function createCompany({
-  name,
-  salesId,
-}: {
-  name: string;
-  salesId: string | number;
+  service_user_id: number;
+  severity?: "low" | "medium" | "high" | "critical";
+  trigger_type?:
+    | "keyword"
+    | "sentiment_dip"
+    | "missed_checkins"
+    | "manual"
+    | "self_referral";
+  notes?: string;
 }) {
   const { data, error } = await adminSupabase
-    .from("companies")
+    .from("escalations")
     .insert({
-      name,
-      sales_id: salesId,
       organisation_id: await getOrganisationId(),
+      service_user_id,
+      severity,
+      trigger_type,
+      notes,
     })
-    .select("id")
+    .select()
     .single();
 
   if (error) {
-    throw new Error(`Failed to create company: ${error.message}`);
+    throw new Error(`Failed to create escalation: ${error.message}`);
   }
-
   return data;
 }
 
-async function createContact({
-  first_name,
-  last_name,
-  title = "",
-  company_id = null,
-  sales_id,
-  notes = [],
-}: {
-  first_name: string;
-  last_name: string;
-  title?: string;
-  company_id?: string | number | null;
-  sales_id: string | number;
-  notes?: {
-    text: string;
-    date?: string;
-    status?: "cold" | "warm" | "hot";
-  }[];
-}) {
-  const { data, error } = await adminSupabase
-    .from("contacts")
-    .insert({
-      first_name,
-      last_name,
-      title,
-      company_id,
-      sales_id,
-      organisation_id: await getOrganisationId(),
-      first_seen: new Date().toISOString(),
-      last_seen: new Date().toISOString(),
-      has_newsletter: false,
-      tags: [],
-      gender: "unknown",
-      status: "cold",
-      background: "",
-      email_jsonb: [],
-      phone_jsonb: [],
-    })
-    .select("id")
-    .single();
+const signIn = async (page: Page, email: string, password = "password") => {
+  await page.goto("/");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Live Control Tower" }),
+  ).toBeVisible();
+};
 
-  if (error) {
-    throw new Error(`Failed to create contact: ${error.message}`);
-  }
-
-  await createNotes({
-    contactId: data.id,
-    salesId: sales_id,
-    notes,
-  });
-
-  return data;
-}
-
-const getMenuMethod = ({ page }: { page: Page; isMobile: boolean }) => ({
-  goToDashboard: async () => {
-    await page.getByRole("link", { name: "Dashboard" }).click();
+const getMenuMethod = ({ page }: { page: Page; isMobile: boolean }) => {
+  const goTo = async (name: string) => {
+    await page.getByRole("link", { name, exact: true }).click();
     await page.waitForLoadState("networkidle");
-  },
-  goToContacts: async () => {
-    await page.getByRole("link", { name: "Contacts" }).click();
-    await page.waitForLoadState("networkidle");
-  },
-});
-
-const dismissToast = async (page: Page, content: string) => {
-  await expect(page.getByText(content)).toBeVisible();
-  await page.getByLabel("Close toast").first().click();
-  // Since we are in optimistic UI, dismissing the toast trigger the request to the api linked to the toast message
-  await page.waitForLoadState("networkidle");
+  };
+  return {
+    goToServiceUsers: () => goTo("Service users"),
+    goToEscalations: () => goTo("Escalations"),
+  };
 };
 
 export const test = base.extend<{
   resetDb: void;
-  createUser: typeof createUser;
   createSales: typeof createSales;
-  createCompany: typeof createCompany;
-  createContact: typeof createContact;
-  createNotes: typeof createNotes;
+  createServiceUser: typeof createServiceUser;
+  createEscalation: typeof createEscalation;
+  signIn: (email: string, password?: string) => Promise<void>;
   menu: ReturnType<typeof getMenuMethod>;
-  dismissToast: (content: string) => Promise<void>;
 }>({
   resetDb: [
     // The first argument to a Playwright fixture function must use object destructuring ({}) — _ is not allowed.
@@ -274,30 +214,22 @@ export const test = base.extend<{
     { auto: true },
   ],
   // eslint-disable-next-line no-empty-pattern
-  createUser: async ({}, cb) => {
-    await cb(createUser);
-  },
-  // eslint-disable-next-line no-empty-pattern
   createSales: async ({}, cb) => {
     await cb(createSales);
   },
   // eslint-disable-next-line no-empty-pattern
-  createCompany: async ({}, cb) => {
-    await cb(createCompany);
+  createServiceUser: async ({}, cb) => {
+    await cb(createServiceUser);
   },
   // eslint-disable-next-line no-empty-pattern
-  createContact: async ({}, cb) => {
-    await cb(createContact);
+  createEscalation: async ({}, cb) => {
+    await cb(createEscalation);
   },
-  // eslint-disable-next-line no-empty-pattern
-  createNotes: async ({}, cb) => {
-    await cb(createNotes);
+  signIn: async ({ page }, cb) => {
+    await cb((email, password) => signIn(page, email, password));
   },
   menu: async ({ page, isMobile }, cb) => {
     await cb(getMenuMethod({ page, isMobile }));
-  },
-  dismissToast: async ({ page }, cb) => {
-    await cb((content: string) => dismissToast(page, content));
   },
 });
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useDataProvider, type Identifier } from "ra-core";
 
+import type { LoggedRecordTable } from "../providers/supabase/dataProvider";
 import type { CrmDataProvider } from "../providers/types";
 
 /**
@@ -8,7 +9,7 @@ import type { CrmDataProvider } from "../providers/types";
  * Logs once per record id, even when React runs effects twice in development.
  */
 export const useLogRecordView = (
-  tableName: "contacts",
+  tableName: LoggedRecordTable,
   recordId: Identifier | undefined,
 ) => {
   const dataProvider = useDataProvider<CrmDataProvider>();

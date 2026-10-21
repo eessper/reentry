@@ -12,9 +12,12 @@ import type {
   Company,
   Contact,
   ContactNote,
+  ControlTowerStats,
   Deal,
   DealNote,
+  Escalation,
   Sale,
+  ServiceUser,
   SalesFormData,
   SearchResourceName,
   SearchResult,
@@ -324,6 +327,20 @@ export const createDataProvider = ({
     },
     // The demo has no audit log
     logRecordView: async () => undefined,
+    getServiceUserHistory: async () => [],
+    getControlTowerStats: async () =>
+      computeDemoStats(
+        await baseDataProvider.getList<ServiceUser>("service_users", {
+          pagination: { page: 1, perPage: 1000 },
+          sort: { field: "id", order: "ASC" },
+          filter: {},
+        }),
+        await baseDataProvider.getList<Escalation>("escalations", {
+          pagination: { page: 1, perPage: 1000 },
+          sort: { field: "id", order: "ASC" },
+          filter: {},
+        }),
+      ),
     mergeContacts: async (sourceId: Identifier, targetId: Identifier) => {
       return mergeContacts(sourceId, targetId, baseDataProvider);
     },
@@ -685,3 +702,38 @@ const convertFileToBase64 = (file: { rawFile: Blob }): Promise<string> =>
     reader.onerror = reject;
     reader.readAsDataURL(file.rawFile);
   });
+
+// The demo has no history to replay, so every day of the chart shows the
+// current status dots, and adherence isn't known.
+const computeDemoStats = (
+  serviceUsers: { data: ServiceUser[] },
+  escalations: { data: Escalation[] },
+): ControlTowerStats => {
+  const active = serviceUsers.data.filter((user) => user.status !== "exited");
+  const open = escalations.data.filter(
+    (escalation) => escalation.status !== "resolved",
+  );
+  const count = (stability: ServiceUser["stability"]) =>
+    active.filter((user) => user.stability === stability).length;
+  return {
+    scope: "organisation",
+    active_clients: active.length,
+    checkins_completed: 0,
+    checkins_missed: 0,
+    checkin_adherence: null,
+    open_escalations: open.length,
+    urgent_escalations: open.filter(
+      (escalation) =>
+        escalation.severity === "high" || escalation.severity === "critical",
+    ).length,
+    stability: Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(Date.now() - (6 - index) * 24 * 60 * 60 * 1000);
+      return {
+        day: day.toISOString().slice(0, 10),
+        stable: count("stable"),
+        watch: count("watch"),
+        critical: count("critical"),
+      };
+    }),
+  };
+};

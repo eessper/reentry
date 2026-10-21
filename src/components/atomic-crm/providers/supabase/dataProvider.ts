@@ -8,7 +8,9 @@ import {
   type ResourceCallbacks,
 } from "ra-core";
 import type {
+  AuditTrailEntry,
   ContactNote,
+  ControlTowerStats,
   Deal,
   DealNote,
   RAFile,
@@ -61,6 +63,9 @@ const getDataProviderWithCustomMethods = () => {
       if (resource === "sales") {
         return baseDataProvider.getList("sales_summary", params);
       }
+      if (resource === "service_users") {
+        return baseDataProvider.getList("service_users_summary", params);
+      }
       if (resource === "activity_log") {
         const { data, total } = await baseDataProvider.getList(
           "activity_log",
@@ -96,6 +101,9 @@ const getDataProviderWithCustomMethods = () => {
       }
       if (resource === "sales") {
         return baseDataProvider.getOne("sales_summary", params);
+      }
+      if (resource === "service_users") {
+        return baseDataProvider.getOne("service_users_summary", params);
       }
 
       return baseDataProvider.getOne(resource, params);
@@ -262,7 +270,30 @@ const getDataProviderWithCustomMethods = () => {
       }
       return data ?? [];
     },
-    async logRecordView(tableName: "contacts", recordId: Identifier) {
+    async getControlTowerStats(): Promise<ControlTowerStats> {
+      const { data, error } = await getSupabaseClient().rpc(
+        "control_tower_stats",
+      );
+      if (error) {
+        console.error("control_tower_stats.error", error);
+        throw new Error("Failed to load the Control Tower figures");
+      }
+      return data as ControlTowerStats;
+    },
+    async getServiceUserHistory(
+      serviceUserId: Identifier,
+    ): Promise<AuditTrailEntry[]> {
+      const { data, error } = await getSupabaseClient().rpc(
+        "service_user_history",
+        { service_user_id: serviceUserId },
+      );
+      if (error) {
+        console.error("service_user_history.error", error);
+        throw new Error("Failed to load the audit trail");
+      }
+      return data ?? [];
+    },
+    async logRecordView(tableName: LoggedRecordTable, recordId: Identifier) {
       const { error } = await getSupabaseClient().rpc("log_record_view", {
         table_name: tableName,
         record_id: recordId,
@@ -306,6 +337,12 @@ const getDataProviderWithCustomMethods = () => {
     },
   } satisfies DataProvider;
 };
+
+/** Tables whose record views go into the audit log (see log_record_view). */
+export type LoggedRecordTable =
+  | "service_users"
+  | "support_profiles"
+  | "contacts";
 
 export type CrmDataProvider = ReturnType<
   typeof getDataProviderWithCustomMethods
@@ -488,6 +525,12 @@ const lifeCycleCallbacks: ResourceCallbacks[] = [
       return await processCompanyLogo(params);
     },
     ...companyLogoReads,
+  },
+  {
+    resource: "service_users",
+    beforeGetList: async (params) => {
+      return applyFullTextSearch(["display_name", "reference_code"])(params);
+    },
   },
   {
     resource: "contacts_summary",

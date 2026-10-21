@@ -11,7 +11,9 @@ import type {
   Company,
   Contact,
   Deal,
+  Escalation,
   Sale,
+  ServiceUser,
 } from "@/components/atomic-crm/types";
 import { DataImportProvider } from "@/components/atomic-crm/dataImport/DataImportProvider";
 import { CRM } from "@/components/atomic-crm/root/CRM";
@@ -55,6 +57,10 @@ export const createCrmDb = (overrides: Partial<Db> = {}): Db =>
     sales: [baseSale],
     tags: [],
     tasks: [],
+    service_users: [],
+    support_profiles: [],
+    escalations: [],
+    activity_events: [],
     ...overrides,
   }) as Db;
 
@@ -123,6 +129,42 @@ export const buildDeal = (overrides: Partial<Deal> = {}): Deal => ({
   sales_id: 0,
   stage: "opportunity",
   updated_at: "2025-01-01T09:00:00.000Z",
+  ...overrides,
+});
+
+export const buildServiceUser = (
+  overrides: Partial<ServiceUser> = {},
+): ServiceUser => ({
+  id: 1,
+  display_name: "Ira E.",
+  reference_code: "RE-43714",
+  release_date: "2026-10-20",
+  programme_day: 2,
+  risk_tier: "moderate",
+  assigned_worker_id: 0,
+  consent_status: "given",
+  status: "active",
+  nb_open_escalations: 0,
+  stability: "stable",
+  last_checkin_at: null,
+  created_at: "2026-10-20T09:00:00.000Z",
+  updated_at: "2026-10-20T09:00:00.000Z",
+  ...overrides,
+});
+
+export const buildEscalation = (
+  overrides: Partial<Escalation> = {},
+): Escalation => ({
+  id: 1,
+  service_user_id: 1,
+  trigger_type: "keyword",
+  severity: "high",
+  status: "open",
+  assigned_to: null,
+  opened_at: "2026-10-20T10:00:00.000Z",
+  acknowledged_at: null,
+  resolved_at: null,
+  notes: "Message mentioned feeling unsafe at night.",
   ...overrides,
 });
 

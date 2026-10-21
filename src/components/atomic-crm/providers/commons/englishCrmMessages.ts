@@ -1,5 +1,146 @@
 export const englishCrmMessages = {
   resources: {
+    service_users: {
+      name: "Service user |||| Service users",
+      forcedCaseName: "Service user",
+      fields: {
+        display_name: "Name",
+        reference_code: "Reference",
+        release_date: "Release date",
+        programme_day: "Day",
+        risk_tier: "Risk tier",
+        assigned_worker_id: "Key worker",
+        consent_status: "Consent",
+        status: "Status",
+        stability: "Stability",
+        last_checkin_at: "Last check-in",
+        nb_open_escalations: "Open escalations",
+      },
+      risk_tiers: {
+        low: "Low",
+        moderate: "Moderate",
+        moderate_high: "Moderate-high",
+        high: "High",
+      },
+      stability: {
+        stable: "Stable",
+        watch: "Watch",
+        critical: "Critical",
+      },
+      statuses: {
+        active: "Active",
+        paused: "Paused",
+        exited: "Exited",
+      },
+      consent: {
+        pending: "Consent pending",
+        given: "Consent given",
+        withdrawn: "Consent withdrawn",
+      },
+      day: "Day %{day}",
+      never: "Never",
+      details_title: "Status and assignment",
+      empty: "No service users yet",
+      validation: {
+        reference_code: "Use the format RE-12345",
+      },
+      create: {
+        title: "Add a service user",
+      },
+    },
+    support_profiles: {
+      name: "Support profile |||| Support profiles",
+      title: "Clinical profile configuration",
+      version: "Version %{version}",
+      saved: "Profile saved",
+      fields: {
+        primary_risk_pathway: "Primary risk pathway",
+        active_cbt_module: "Active CBT module",
+        checkin_frequency: "Check-in frequency",
+        sentiment_dip_days: "Sentiment dip (days)",
+        missed_checkins_threshold: "Missed check-ins before escalating",
+        keyword_sensitivity: "Keyword sensitivity (1-10)",
+      },
+      pathways: {
+        substance_use: "Substance use",
+        housing_instability: "Housing instability",
+        financial_stress: "Financial stress",
+        interpersonal_conflict: "Interpersonal conflict",
+      },
+      modules: {
+        distress_tolerance: "Distress tolerance",
+        cognitive_reframing: "Cognitive reframing",
+        emotional_regulation: "Emotional regulation",
+        urge_surfing: "Urge surfing",
+        radical_acceptance: "Radical acceptance",
+      },
+      frequencies: {
+        twice_daily: "Twice daily",
+        daily: "Daily",
+        every_other_day: "Every other day",
+        weekly: "Weekly",
+      },
+    },
+    escalations: {
+      name: "Escalation |||| Escalations",
+      fields: {
+        service_user_id: "Service user",
+        trigger_type: "Trigger",
+        severity: "Severity",
+        status: "Status",
+        assigned_to: "Assigned to",
+        opened_at: "Opened",
+        notes: "Notes",
+      },
+      triggers: {
+        keyword: "Keyword",
+        sentiment_dip: "Sentiment dip",
+        missed_checkins: "Missed check-ins",
+        manual: "Raised by staff",
+        self_referral: "Asked for help",
+      },
+      severities: {
+        low: "Low",
+        medium: "Medium",
+        high: "High",
+        critical: "Critical",
+      },
+      statuses: {
+        open: "Open",
+        acknowledged: "Acknowledged",
+        resolved: "Resolved",
+      },
+      actions: {
+        acknowledge: "Acknowledge",
+        resolve: "Resolve",
+        resolve_title: "Resolve this escalation",
+        notes_help: "What was done? This goes in the record.",
+        notes_required: "Add a note saying what was done",
+      },
+      notifications: {
+        acknowledged: "Escalation acknowledged",
+        resolved: "Escalation resolved",
+      },
+      queue: {
+        title: "Escalation queue",
+        needs_attention: "Needs attention",
+        resolved: "Resolved",
+        empty: "Nothing needs attention right now",
+      },
+    },
+    activity_events: {
+      name: "Activity",
+      types: {
+        checkin: "Check-in",
+        missed_checkin: "Missed check-in",
+        cbt_deploy: "CBT exercise",
+        logistics: "Logistics",
+        escalation: "Escalation",
+        override: "Override",
+        profile_change: "Profile change",
+      },
+      empty: "No activity yet",
+    },
     companies: {
       name: "Company |||| Companies",
       forcedCaseName: "Company",
@@ -277,6 +418,7 @@ export const englishCrmMessages = {
     },
     sales: {
       name: "User |||| Users",
+      team: "Team",
       fields: {
         first_name: "First name",
         last_name: "Last name",
@@ -368,6 +510,52 @@ export const englishCrmMessages = {
     },
   },
   crm: {
+    control_tower: {
+      title: "Live Control Tower",
+      short_title: "Overview",
+      kpi: {
+        active_clients: "Active clients",
+        checkin_adherence: "Check-in adherence (7 days)",
+        open_escalations: "Open escalations",
+        urgent: "%{count} high or critical",
+        no_checkins: "No check-ins yet",
+        caseload: "Your caseload",
+        organisation: "Whole organisation",
+      },
+      stability_chart: "7-day stability",
+      cohort: "Cohort",
+      activity: "Live activity",
+      viewer_notice:
+        "Your role shows aggregated figures only. Individual records are hidden.",
+      error: "The Control Tower figures could not be loaded.",
+    },
+    audit_trail: {
+      title: "Configuration audit trail",
+      empty: "No history yet",
+      error: "The audit trail could not be loaded.",
+      by: "by %{name}",
+      changed: "Changed %{fields}",
+      events: {
+        service_users: {
+          create: "Service user added",
+          update: "Service user updated",
+          delete: "Service user removed",
+          view: "Record opened",
+        },
+        support_profiles: {
+          create: "Profile created",
+          update: "Profile changed",
+          delete: "Profile removed",
+          view: "Profile opened",
+        },
+        escalations: {
+          create: "Escalation opened",
+          update: "Escalation updated",
+          delete: "Escalation deleted",
+          view: "Escalation opened for viewing",
+        },
+      },
+    },
     action: {
       reset_password: "Reset Password",
     },

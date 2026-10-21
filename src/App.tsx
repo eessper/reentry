@@ -1,4 +1,6 @@
 import { CRM } from "@/components/atomic-crm/root/CRM";
+import logoDark from "./assets/reentry-logo-dark.svg";
+import logoLight from "./assets/reentry-logo-light.svg";
 
 /**
  * Application entry point
@@ -31,6 +33,9 @@ import { CRM } from "@/components/atomic-crm/root/CRM";
  *    />
  * );
  */
-const App = () => <CRM />;
+
+const App = () => (
+  <CRM darkModeLogo={logoDark} lightModeLogo={logoLight} title="Re-entry" />
+);
 
 export default App;
