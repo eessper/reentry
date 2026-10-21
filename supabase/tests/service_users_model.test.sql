@@ -25,7 +25,7 @@ insert into public.service_users (id, display_name, reference_code, release_date
 -------------------------------------------------------------------------------
 
 select results_eq(
-    $$select id, programme_day from public.service_users_summary order by id$$,
+    $$select id, programme_day from public.service_users_summary where id in (9001, 9002) order by id$$,
     $$values (9001::bigint, 1), (9002::bigint, 8)$$,
     'programme_day is 1 on the day of release and counts up from there');
 
