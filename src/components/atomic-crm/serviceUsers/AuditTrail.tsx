@@ -10,14 +10,14 @@ import type { AuditTrailEntry, ServiceUser } from "../types";
 import { changedFields } from "./serviceUserFields";
 
 /** The profile's "Configuration Audit Trail": who changed or opened what, when. */
-export const AuditTrail = () => {
+export const AuditTrail = ({ isReady = true }: { isReady?: boolean }) => {
   const record = useRecordContext<ServiceUser>();
   const dataProvider = useDataProvider<CrmDataProvider>();
   const translate = useTranslate();
   const { data, isPending, isError } = useQuery({
     queryKey: ["serviceUserHistory", record?.id],
     queryFn: () => dataProvider.getServiceUserHistory(record!.id),
-    enabled: record != null,
+    enabled: record != null && isReady,
   });
 
   const fieldLabel = (entry: AuditTrailEntry, field: string) =>

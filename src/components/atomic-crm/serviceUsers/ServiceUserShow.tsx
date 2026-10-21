@@ -27,7 +27,8 @@ export const ServiceUserShow = () => (
 const ServiceUserShowContent = () => {
   const { record, isPending } = useShowContext<ServiceUser>();
   const isMobile = useIsMobile();
-  useLogRecordView("service_users", record?.id);
+  // The audit trail waits for this view to be logged, so it lists it
+  const isViewLogged = useLogRecordView("service_users", record?.id);
 
   if (isPending || !record) {
     return <Skeleton className="h-64 w-full mt-4" />;
@@ -43,7 +44,7 @@ const ServiceUserShowContent = () => {
           <EscalationsForServiceUser serviceUserId={record.id} />
         </div>
         <div className="lg:col-span-5 flex flex-col gap-4">
-          <AuditTrail />
+          <AuditTrail isReady={isViewLogged} />
           <ActivityFeed serviceUserId={record.id} limit={10} />
         </div>
       </div>
