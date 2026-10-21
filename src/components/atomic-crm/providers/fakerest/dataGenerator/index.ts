@@ -1,31 +1,21 @@
-import { generateCompanies } from "./companies";
-import { generateContactNotes } from "./contactNotes";
-import { generateContacts } from "./contacts";
-import { generateDealNotes } from "./dealNotes";
-import { generateDeals } from "./deals";
-import { finalize } from "./finalize";
 import { generateSales } from "./sales";
-import { generateTags } from "./tags";
-import { generateTasks } from "./tasks";
+import { generateServiceUsers } from "./serviceUsers";
 import type { Db } from "./types";
 
 export default (): Db => {
   const db = {} as Db;
   db.sales = generateSales(db);
-  db.tags = generateTags(db);
-  db.companies = generateCompanies(db);
-  db.contacts = generateContacts(db);
-  db.contact_notes = generateContactNotes(db);
-  db.deals = generateDeals(db);
-  db.deal_notes = generateDealNotes(db);
-  db.tasks = generateTasks(db);
+  const { serviceUsers, profiles, escalations, events } =
+    generateServiceUsers(db);
+  db.service_users = serviceUsers;
+  db.support_profiles = profiles;
+  db.escalations = escalations;
+  db.activity_events = events;
   db.configuration = [
     {
       id: 1,
       config: {} as Db["configuration"][number]["config"],
     },
   ];
-  finalize(db);
-
   return db;
 };

@@ -9,15 +9,10 @@ import {
 } from "ra-core";
 import type {
   AuditTrailEntry,
-  ContactNote,
   ControlTowerStats,
-  Deal,
-  DealNote,
   RAFile,
   Sale,
   SalesFormData,
-  SearchResourceName,
-  SearchResult,
   SignUpData,
 } from "../../types";
 import type { ConfigurationContextValue } from "../../root/ConfigurationContext";
@@ -33,72 +28,22 @@ const getBaseDataProvider = () =>
     sortOrder: "asc,desc.nullslast" as any,
   });
 
-const processCompanyLogo = async (params: any) => {
-  const logo =
-    params.data.logo?.rawFile instanceof File
-      ? await uploadToBucket(params.data.logo, "shared")
-      : params.data.logo;
-
-  return {
-    ...params,
-    data: {
-      ...params.data,
-      logo,
-    },
-  };
-};
-
 const getDataProviderWithCustomMethods = () => {
   const baseDataProvider = getBaseDataProvider();
 
   return {
     ...baseDataProvider,
     async getList(resource: string, params: GetListParams) {
-      if (resource === "companies") {
-        return baseDataProvider.getList("companies_summary", params);
-      }
-      if (resource === "contacts") {
-        return baseDataProvider.getList("contacts_summary", params);
-      }
       if (resource === "sales") {
         return baseDataProvider.getList("sales_summary", params);
       }
       if (resource === "service_users") {
         return baseDataProvider.getList("service_users_summary", params);
       }
-      if (resource === "activity_log") {
-        const { data, total } = await baseDataProvider.getList(
-          "activity_log",
-          params,
-        );
-        // Sign the logos of the companies embedded in the feed
-        const rows = await signRecordFiles(
-          data,
-          (row: any) => (row.company ? getLogo(row.company) : []),
-          (row: any, [logo]) => ({ ...row, company: { ...row.company, logo } }),
-        );
-        // Rename snake_case view columns to camelCase to match Activity type
-        return {
-          data: rows.map((row: any) => ({
-            ...row,
-            contactNote: row.contact_note ?? undefined,
-            dealNote: row.deal_note ?? undefined,
-            contact_note: undefined,
-            deal_note: undefined,
-          })),
-          total,
-        };
-      }
 
       return baseDataProvider.getList(resource, params);
     },
     async getOne(resource: string, params: any) {
-      if (resource === "companies") {
-        return baseDataProvider.getOne("companies_summary", params);
-      }
-      if (resource === "contacts") {
-        return baseDataProvider.getOne("contacts_summary", params);
-      }
       if (resource === "sales") {
         return baseDataProvider.getOne("sales_summary", params);
       }
@@ -226,49 +171,8 @@ const getDataProviderWithCustomMethods = () => {
 
       return passwordUpdated;
     },
-    async unarchiveDeal(deal: Deal) {
-      // get all deals where stage is the same as the deal to unarchive
-      const { data: deals } = await baseDataProvider.getList<Deal>("deals", {
-        filter: { stage: deal.stage },
-        pagination: { page: 1, perPage: 1000 },
-        sort: { field: "index", order: "ASC" },
-      });
-
-      // set index for each deal starting from 1, if the deal to unarchive is found, set its index to the last one
-      const updatedDeals = deals.map((d, index) => ({
-        ...d,
-        index: d.id === deal.id ? 0 : index + 1,
-        archived_at: d.id === deal.id ? null : d.archived_at,
-      }));
-
-      return await Promise.all(
-        updatedDeals.map((updatedDeal) =>
-          baseDataProvider.update("deals", {
-            id: updatedDeal.id,
-            data: updatedDeal,
-            previousData: deals.find((d) => d.id === updatedDeal.id),
-          }),
-        ),
-      );
-    },
     async isInitialized() {
       return getIsInitialized();
-    },
-    async globalSearch(
-      query: string,
-      resources: readonly SearchResourceName[],
-      maxResults: number,
-    ): Promise<SearchResult[]> {
-      const { data, error } = await getSupabaseClient().rpc("global_search", {
-        query,
-        resources,
-        max_results: maxResults,
-      });
-      if (error) {
-        console.error("global_search.error", error);
-        throw new Error("Failed to search");
-      }
-      return data ?? [];
     },
     async getControlTowerStats(): Promise<ControlTowerStats> {
       const { data, error } = await getSupabaseClient().rpc(
@@ -303,22 +207,6 @@ const getDataProviderWithCustomMethods = () => {
         throw new Error("Failed to log the record view");
       }
     },
-    async mergeContacts(sourceId: Identifier, targetId: Identifier) {
-      const { data, error } = await getSupabaseClient().functions.invoke(
-        "merge_contacts",
-        {
-          method: "POST",
-          body: { loserId: sourceId, winnerId: targetId },
-        },
-      );
-
-      if (error) {
-        console.error("merge_contacts.error", error);
-        throw new Error("Failed to merge contacts");
-      }
-
-      return data;
-    },
     async getConfiguration(): Promise<ConfigurationContextValue> {
       const { data } = await baseDataProvider.getOne("configuration", {
         id: 1,
@@ -339,10 +227,7 @@ const getDataProviderWithCustomMethods = () => {
 };
 
 /** Tables whose record views go into the audit log (see log_record_view). */
-export type LoggedRecordTable =
-  | "service_users"
-  | "support_profiles"
-  | "contacts";
+export type LoggedRecordTable = "service_users" | "support_profiles";
 
 export type CrmDataProvider = ReturnType<
   typeof getDataProviderWithCustomMethods
@@ -419,19 +304,6 @@ const signRecordFiles = async <R>(
   });
 };
 
-const noteAttachmentReads = signedReads<ContactNote | DealNote>(
-  (note) => note.attachments ?? [],
-  (note, attachments) => ({ ...note, attachments }),
-);
-
-const getLogo = (company: { logo?: RAFile | null }) =>
-  company.logo ? [company.logo] : [];
-
-const companyLogoReads = signedReads<RaRecord & { logo?: RAFile | null }>(
-  getLogo,
-  (company, [logo]) => ({ ...company, logo }),
-);
-
 const lifeCycleCallbacks: ResourceCallbacks[] = [
   {
     resource: "configuration",
@@ -443,30 +315,6 @@ const lifeCycleCallbacks: ResourceCallbacks[] = [
       }
       return params;
     },
-  },
-  {
-    resource: "contact_notes",
-    beforeSave: async (data: ContactNote, _, __) => {
-      if (data.attachments) {
-        data.attachments = await Promise.all(
-          data.attachments.map((fi) => uploadToBucket(fi, "notes")),
-        );
-      }
-      return data;
-    },
-    ...noteAttachmentReads,
-  },
-  {
-    resource: "deal_notes",
-    beforeSave: async (data: DealNote, _, __) => {
-      if (data.attachments) {
-        data.attachments = await Promise.all(
-          data.attachments.map((fi) => uploadToBucket(fi, "notes")),
-        );
-      }
-      return data;
-    },
-    ...noteAttachmentReads,
   },
   {
     resource: "sales",
@@ -485,63 +333,9 @@ const lifeCycleCallbacks: ResourceCallbacks[] = [
     ),
   },
   {
-    resource: "contacts",
-    beforeGetList: async (params) => {
-      return applyFullTextSearch([
-        "first_name",
-        "last_name",
-        "company_name",
-        "title",
-        "email",
-        "phone",
-        "background",
-      ])(params);
-    },
-  },
-  {
-    resource: "companies",
-    beforeGetList: async (params) => {
-      return applyFullTextSearch([
-        "name",
-        "phone_number",
-        "website",
-        "zipcode",
-        "city",
-        "state_abbr",
-      ])(params);
-    },
-    beforeCreate: async (params) => {
-      const createParams = await processCompanyLogo(params);
-
-      return {
-        ...createParams,
-        data: {
-          created_at: new Date().toISOString(),
-          ...createParams.data,
-        },
-      };
-    },
-    beforeUpdate: async (params) => {
-      return await processCompanyLogo(params);
-    },
-    ...companyLogoReads,
-  },
-  {
     resource: "service_users",
     beforeGetList: async (params) => {
       return applyFullTextSearch(["display_name", "reference_code"])(params);
-    },
-  },
-  {
-    resource: "contacts_summary",
-    beforeGetList: async (params) => {
-      return applyFullTextSearch(["first_name", "last_name"])(params);
-    },
-  },
-  {
-    resource: "deals",
-    beforeGetList: async (params) => {
-      return applyFullTextSearch(["name", "category", "description"])(params);
     },
   },
 ];

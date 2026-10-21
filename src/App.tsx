@@ -1,6 +1,4 @@
 import { CRM } from "@/components/atomic-crm/root/CRM";
-import logoDark from "./assets/reentry-logo-dark.svg";
-import logoLight from "./assets/reentry-logo-light.svg";
 
 /**
  * Application entry point
@@ -35,7 +33,8 @@ import logoLight from "./assets/reentry-logo-light.svg";
  */
 
 const App = () => (
-  <CRM darkModeLogo={logoDark} lightModeLogo={logoLight} title="Re-entry" />
+  // No usage pings to the Atomic CRM authors (marmelab.com)
+  <CRM disableTelemetry />
 );
 
 export default App;
