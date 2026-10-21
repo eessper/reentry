@@ -32,12 +32,12 @@ Atomic CRM is a **single-team** CRM. Every finding below is a problem for a mult
 | F4 | `configuration` is a single global row editable by any admin, so one organisation's admin would change settings for everyone. | High | **Session 1** (made per-organisation) |
 | F5 | Foreign keys don't check organisation, so a row could point at another organisation's record (for example a note attached to someone else's contact). | High | **Session 1** (composite foreign keys) |
 | F6 | The `attachments` storage bucket is **public**: anyone with a file's URL can download it without logging in, and any logged-in user can list every file. | Critical | **Session 2** (fixed: private bucket, organisation-scoped paths, signed URLs) |
-| F7 | Saving a contact sends a hash of their email to **gravatar.com** and their email domain to **favicon.show** (US services). That breaches the UK/EU residency rule. | High | **Session 3** added `service_users`, which has no such trigger; the leak goes away when the contacts screens are retired in **Session 4** |
-| F8 | `contacts.tags` and `deals.contact_ids` are arrays of ids with no foreign key, so they can hold ids from another organisation. RLS still hides the other organisation's rows, so nothing leaks, but the data is untidy. | Low | Retired with the CRM tables in Session 3 |
+| F7 | Saving a contact sends a hash of their email to **gravatar.com** and their email domain to **favicon.show** (US services). That breaches the UK/EU residency rule. | High | **Session 4** removed every screen that writes contacts or companies; the triggers go when the CRM tables are dropped |
+| F8 | `contacts.tags` and `deals.contact_ids` are arrays of ids with no foreign key, so they can hold ids from another organisation. RLS still hides the other organisation's rows, so nothing leaks, but the data is untidy. | Low | Goes with the CRM tables (next migration) |
 | F9 | The `delete_note_attachments` edge function accepts any signed-in user's token and deletes whatever storage paths it is given, in any organisation. | High | **Session 2** (fixed: it only drains a queue the database fills) |
 | F10 | The `postmark` inbound-email function writes contacts and notes with the service role. After Session 1 those writes fail (no organisation to stamp), so it fails closed; it must be removed or tenant-scoped before deployment. | Medium | **Session 2** (fixed: removed) |
 
-**Until F7 is fixed, do not put any real-looking contact emails into the CRM screens.** Phase 1 is synthetic data only anyway.
+Until the CRM tables are dropped, do not write contacts or companies through the API. Phase 1 is synthetic data only anyway.
 
 ## 3. Tenancy design (Session 1)
 
@@ -130,6 +130,20 @@ All in `supabase/schemas/08_service_users.sql`, following the tenancy (section 3
 - Phase 2 hooks: an open escalation is the signal that must stop AI replies, and `escalations.opened_at` and `acknowledged_at` are what an unacknowledged-escalation timer will read.
 - Demo data comes from `scripts/seed-demo.mjs` (`make seed-demo`): two fictional organisations with an admin, a clinical lead, two key workers and a viewer each, 15 service users with configured profiles, a few open escalations and a week of activity.
 
+## 3d. Screens (Session 4)
+
+| Screen | Route | Who | Data |
+|---|---|---|---|
+| Live Control Tower | `/` | everyone | `control_tower_stats()` aggregates (KPIs, 7-day stability chart); the cohort and activity feed for staff only |
+| Service user profile | `/service_users/:id/show` | admins, leads, the assigned key worker | profile configuration, status and assignment, escalations, activity, audit trail (`service_user_history()`) |
+| Escalation queue | `/escalations` | admins, leads, key workers (their own) | `escalations`; acknowledge and resolve with notes |
+| Team | `/sales` | org admins | staff and roles through the `users` edge function |
+
+- **Status dots:** `service_user_stability()` gives critical (an unresolved high or critical escalation), watch (any other unresolved escalation, a missed check-in in the last 48 hours, or a high risk tier) or stable. The chart replays the same rule for each past day.
+- **Viewers** get the KPIs and chart and nothing else. Small organisations may still be able to infer individuals from aggregates; consider a minimum cohort size before real data arrives.
+- **The Atomic CRM frontend has been removed:** contacts, companies, deals, tasks, notes, tags, the CRM import, global search, `merge_contacts` and the MCP card. Its tables stay in the database until the next migration drops them (see `CLAUDE.md`).
+- **Telemetry:** the app no longer pings the Atomic CRM authors' telemetry server.
+
 ## 4. Mapping the CRM onto the brief
 
 | Atomic CRM | Re-entry | Plan |
@@ -152,6 +166,7 @@ All in `supabase/schemas/08_service_users.sql`, following the tenancy (section 3
 - The tenancy suite (`supabase/tests/tenancy_isolation.test.sql`) creates two organisations with users and data, then proves, for every tenant table, that a user in one organisation can't select, insert, update or delete the other organisation's rows, and can't create cross-organisation links.
 - The roles suite (`roles_permissions.test.sql`) signs in as each role and proves what it can see and change, including that key workers can't see or touch colleagues' records and viewers get no individual records.
 - The audit suite (`audit_log.test.sql`) proves every insert, update and delete on every audited table writes a log row, views are logged, and nobody (app roles, service role, owner) can change or remove log rows.
+- The Control Tower suite (`control_tower.test.sql`) covers the status dots, the aggregate stats (including that viewers get numbers but no rows) and the audit trail function.
 - The data model suite (`service_users_model.test.sql`) covers the rules the database applies by itself: programme day, default profiles, versioning, escalation timestamps and value constraints.
 - The storage suite (`storage_attachments.test.sql`) proves the bucket is private, who can read and upload what, and that the deletion queue only ever holds the note's own organisation's orphaned files.
 - Frontend and edge-function unit tests stay on Vitest (`make test`).

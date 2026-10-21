@@ -203,6 +203,65 @@ begin
 end;
 $$;
 
+-- Events recorded by a signed-in member are always in their name: the actor
+-- can't be left empty (which reads as automated) or set to a colleague.
+-- Inserts by the service role (seed, Phase 2 engine) keep what they send.
+create or replace function public.stamp_activity_actor()
+returns trigger
+language plpgsql
+set search_path to ''
+as $$
+begin
+  if auth.uid() is not null then
+    new.actor_sales_id := private.current_sales_id();
+  end if;
+  return new;
+end;
+$$;
+
+-- How a service user is doing at a point in time, for the status dots and
+-- the stability chart:
+--   critical  an unresolved high or critical escalation
+--   watch     any other unresolved escalation, a missed check-in in the last
+--             48 hours, or a high risk tier
+--   stable    otherwise
+-- Runs as the caller, so it only ever counts rows the caller can see.
+create or replace function public.service_user_stability(service_user_id bigint, risk_tier public.risk_tier, at_time timestamp with time zone)
+returns text
+language sql
+stable
+set search_path to ''
+as $$
+  select case
+    when exists (
+      select 1 from public.escalations e
+      where e.service_user_id = service_user_stability.service_user_id
+        and e.severity in ('high', 'critical')
+        and e.opened_at <= service_user_stability.at_time
+        and (e.resolved_at is null or e.resolved_at > service_user_stability.at_time)
+    ) then 'critical'
+    when service_user_stability.risk_tier = 'high'
+      or exists (
+        select 1 from public.escalations e
+        where e.service_user_id = service_user_stability.service_user_id
+          and e.opened_at <= service_user_stability.at_time
+          and (e.resolved_at is null or e.resolved_at > service_user_stability.at_time)
+      )
+      or exists (
+        select 1 from public.activity_events a
+        where a.service_user_id = service_user_stability.service_user_id
+          and a.type = 'missed_checkin'
+          and a.created_at > service_user_stability.at_time - interval '48 hours'
+          and a.created_at <= service_user_stability.at_time
+      ) then 'watch'
+    else 'stable'
+  end
+$$;
+
+create or replace trigger stamp_activity_actor
+    before insert on public.activity_events
+    for each row execute function public.stamp_activity_actor();
+
 create or replace trigger on_service_user_created
     after insert on public.service_users
     for each row execute function public.handle_service_user_created();
@@ -224,7 +283,8 @@ create or replace trigger stamp_escalation_status
 --
 
 -- Service users with the derived fields the cohort list needs.
--- programme_day counts from 1 on the day of release.
+-- programme_day counts from 1 on the day of release; stability is the
+-- status dot (see service_user_stability above).
 create or replace view public.service_users_summary with (security_invoker = on) as
 select
     su.id,
@@ -239,7 +299,12 @@ select
     su.status,
     su.created_at,
     su.updated_at,
-    count(e.id) filter (where e.status <> 'resolved'::public.escalation_status) as nb_open_escalations
+    count(e.id) filter (where e.status <> 'resolved'::public.escalation_status) as nb_open_escalations,
+    public.service_user_stability(su.id, su.risk_tier, now()) as stability,
+    (
+        select max(a.created_at) from public.activity_events a
+        where a.service_user_id = su.id and a.type = 'checkin'::public.activity_event_type
+    ) as last_checkin_at
 from public.service_users su
     left join public.escalations e on e.service_user_id = su.id
 group by su.id;
@@ -384,3 +449,9 @@ revoke all on function public.version_support_profile() from public;
 revoke all on function public.version_support_profile() from anon;
 revoke all on function public.stamp_escalation_status() from public;
 revoke all on function public.stamp_escalation_status() from anon;
+revoke all on function public.stamp_activity_actor() from public;
+revoke all on function public.stamp_activity_actor() from anon;
+revoke all on function public.service_user_stability(bigint, public.risk_tier, timestamp with time zone) from public;
+revoke all on function public.service_user_stability(bigint, public.risk_tier, timestamp with time zone) from anon;
+grant execute on function public.service_user_stability(bigint, public.risk_tier, timestamp with time zone) to authenticated;
+grant execute on function public.service_user_stability(bigint, public.risk_tier, timestamp with time zone) to service_role;

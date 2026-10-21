@@ -66,24 +66,17 @@ make registry-build   # Build Shadcn registry
 src/
 ├── components/
 │   ├── admin/              # Shadcn Admin Kit components (mutable dependency)
-│   ├── atomic-crm/         # Main CRM application code (~15,000 LOC)
-│   │   ├── activity/       # Activity logs
-│   │   ├── companies/      # Company management
-│   │   ├── contacts/       # Contact management (includes CSV import/export)
-│   │   ├── dashboard/      # Dashboard widgets
-│   │   ├── deals/          # Deal pipeline (Kanban)
-│   │   ├── filters/        # List filters
+│   ├── atomic-crm/         # Re-entry Control Tower application code
+│   │   ├── controlTower/   # Landing page: KPIs, stability chart, cohort, activity feed
+│   │   ├── escalations/    # Escalation queue (acknowledge, resolve)
 │   │   ├── layout/         # App layout components
 │   │   ├── login/          # Authentication pages
 │   │   ├── misc/           # Shared utilities
-│   │   ├── notes/          # Note management
-│   │   ├── providers/      # Data providers (Supabase + FakeRest)
+│   │   ├── providers/      # Data providers (Supabase + FakeRest), access rules, i18n
 │   │   ├── root/           # Root CRM component
-│   │   ├── sales/          # Sales team management
-│   │   ├── settings/       # Settings page
-│   │   ├── simple-list/    # List components
-│   │   ├── tags/           # Tag management
-│   │   └── tasks/          # Task management
+│   │   ├── sales/          # Team (staff) management
+│   │   ├── serviceUsers/   # Cohort list, profile and configuration, audit trail
+│   │   └── settings/       # Branding settings and profile pages
 │   ├── supabase/           # Supabase-specific auth components
 │   └── ui/                 # Shadcn UI components (mutable dependency)
 ├── hooks/                  # Custom React hooks
@@ -154,22 +147,16 @@ The project uses TypeScript path aliases configured in `tsconfig.json` and `comp
 - `@/hooks` → `src/hooks`
 - `@/components/ui` → `src/components/ui`
 
-### Adding Custom Fields
+### Adding Fields to Service Users
 
-When modifying contact or company data structures:
-1. Edit the relevant schema file in `supabase/schemas/` (table in `01_tables.sql`, views in `03_views.sql`, etc.)
-2. Generate a migration: `npx supabase db diff --local -f <name>`
-3. Apply it: `npx supabase migration up --local`
-4. Update the CSV sample of the resource: `src/components/atomic-crm/contacts/contacts_export.csv`, `src/components/atomic-crm/dataImport/companies_sample.csv` or `src/components/atomic-crm/dataImport/deals_sample.csv`
-5. Update the matching import function: `src/components/atomic-crm/contacts/useContactImport.tsx`, `src/components/atomic-crm/dataImport/useCompanyImport.ts` or `src/components/atomic-crm/dataImport/useDealImport.ts`
-6. If using FakeRest, update data generators in `src/components/atomic-crm/providers/fakerest/dataGenerator/`
-7. Don't forget to update the related view (`contacts_summary`, `companies_summary`) in `03_views.sql`
-8. Don't forget the export functions
-9. Don't forget the contact merge logic
+1. Edit `supabase/schemas/08_service_users.sql` (and the `service_users_summary` view there), then write the migration (see `CLAUDE.md` for the cloud-session workflow)
+2. Update the types in `src/components/atomic-crm/types.ts` and the inputs in `src/components/atomic-crm/serviceUsers/`
+3. Update the FakeRest generator in `src/components/atomic-crm/providers/fakerest/dataGenerator/serviceUsers.ts`
+4. Update `scripts/seed-demo.mjs` if the demo data should use it
 
 ### Running with Test Data
 
-Import `test-data/contacts.csv` via the Contacts page → Import button.
+`npx supabase db reset --local && make seed-demo` loads two fictional organisations (see `CLAUDE.md`).
 
 ### Git Hooks
 

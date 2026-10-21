@@ -1,4 +1,4 @@
-import { FileText, Import, Settings, User, Users } from "lucide-react";
+import { Settings, User } from "lucide-react";
 import { CanAccess, useTranslate, useUserMenu } from "ra-core";
 import { Link, matchPath, useLocation } from "react-router";
 import { RefreshButton } from "@/components/admin/refresh-button";
@@ -7,9 +7,6 @@ import { UserMenu } from "@/components/admin/user-menu";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 import { useConfigurationContext } from "../root/ConfigurationContext";
-import { ImportPage } from "../misc/ImportPage";
-import { ChangelogPage } from "../misc/ChangelogPage";
-import { GlobalSearchButton } from "../search/GlobalSearchButton";
 
 const Header = () => {
   const { darkModeLogo, lightModeLogo, title } = useConfigurationContext();
@@ -19,12 +16,12 @@ const Header = () => {
   let currentPath: string | boolean = "/";
   if (matchPath("/", location.pathname)) {
     currentPath = "/";
-  } else if (matchPath("/contacts/*", location.pathname)) {
-    currentPath = "/contacts";
-  } else if (matchPath("/companies/*", location.pathname)) {
-    currentPath = "/companies";
-  } else if (matchPath("/deals/*", location.pathname)) {
-    currentPath = "/deals";
+  } else if (matchPath("/service_users/*", location.pathname)) {
+    currentPath = "/service_users";
+  } else if (matchPath("/escalations/*", location.pathname)) {
+    currentPath = "/escalations";
+  } else if (matchPath("/sales/*", location.pathname)) {
+    currentPath = "/sales";
   } else {
     currentPath = false;
   }
@@ -54,47 +51,45 @@ const Header = () => {
               <div>
                 <nav className="flex">
                   <NavigationTab
-                    label={translate("ra.page.dashboard")}
+                    label={translate("crm.control_tower.title")}
                     to="/"
                     isActive={currentPath === "/"}
                   />
-                  <NavigationTab
-                    label={translate("resources.contacts.name", {
-                      smart_count: 2,
-                    })}
-                    to="/contacts"
-                    isActive={currentPath === "/contacts"}
-                  />
-                  <NavigationTab
-                    label={translate("resources.companies.name", {
-                      smart_count: 2,
-                    })}
-                    to="/companies"
-                    isActive={currentPath === "/companies"}
-                  />
-                  <NavigationTab
-                    label={translate("resources.deals.name", {
-                      smart_count: 2,
-                    })}
-                    to="/deals"
-                    isActive={currentPath === "/deals"}
-                  />
+                  <CanAccess resource="service_users" action="list">
+                    <NavigationTab
+                      label={translate("resources.service_users.name", {
+                        smart_count: 2,
+                      })}
+                      to="/service_users"
+                      isActive={currentPath === "/service_users"}
+                    />
+                  </CanAccess>
+                  <CanAccess resource="escalations" action="list">
+                    <NavigationTab
+                      label={translate("resources.escalations.name", {
+                        smart_count: 2,
+                      })}
+                      to="/escalations"
+                      isActive={currentPath === "/escalations"}
+                    />
+                  </CanAccess>
+                  <CanAccess resource="sales" action="list">
+                    <NavigationTab
+                      label={translate("resources.sales.team")}
+                      to="/sales"
+                      isActive={currentPath === "/sales"}
+                    />
+                  </CanAccess>
                 </nav>
               </div>
               <div className="flex items-center">
-                <GlobalSearchButton />
                 <ThemeModeToggle />
                 <RefreshButton />
                 <UserMenu>
                   <ProfileMenu />
-                  <CanAccess resource="sales" action="list">
-                    <UsersMenu />
-                  </CanAccess>
                   <CanAccess resource="configuration" action="edit">
                     <SettingsMenu />
                   </CanAccess>
-                  <ImportFromJsonMenuItem />
-                  <ChangelogMenuItem />
                 </UserMenu>
               </div>
             </div>
@@ -125,22 +120,6 @@ const NavigationTab = ({
     {label}
   </Link>
 );
-
-const UsersMenu = () => {
-  const translate = useTranslate();
-  const userMenuContext = useUserMenu();
-  if (!userMenuContext) {
-    throw new Error("<UsersMenu> must be used inside <UserMenu?");
-  }
-  return (
-    <DropdownMenuItem asChild onClick={userMenuContext.onClose}>
-      <Link to="/sales" className="flex items-center gap-2">
-        <Users />
-        {translate("resources.sales.name", { smart_count: 2 })}
-      </Link>
-    </DropdownMenuItem>
-  );
-};
 
 const ProfileMenu = () => {
   const translate = useTranslate();
@@ -174,35 +153,4 @@ const SettingsMenu = () => {
   );
 };
 
-const ImportFromJsonMenuItem = () => {
-  const translate = useTranslate();
-  const userMenuContext = useUserMenu();
-  if (!userMenuContext) {
-    throw new Error("<ImportFromJsonMenuItem> must be used inside <UserMenu>");
-  }
-  return (
-    <DropdownMenuItem asChild onClick={userMenuContext.onClose}>
-      <Link to={ImportPage.path} className="flex items-center gap-2">
-        <Import />
-        {translate("crm.header.import_data")}
-      </Link>
-    </DropdownMenuItem>
-  );
-};
-
-const ChangelogMenuItem = () => {
-  const translate = useTranslate();
-  const userMenuContext = useUserMenu();
-  if (!userMenuContext) {
-    throw new Error("<ChangelogMenuItem> must be used inside <UserMenu>");
-  }
-  return (
-    <DropdownMenuItem asChild onClick={userMenuContext.onClose}>
-      <Link to={ChangelogPage.path} className="flex items-center gap-2">
-        <FileText />
-        {translate("crm.changelog.title")}
-      </Link>
-    </DropdownMenuItem>
-  );
-};
 export default Header;
