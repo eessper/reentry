@@ -115,8 +115,13 @@ test-app:
 test-functions:
 	npm run test:unit:functions
 
-test-db: ## run the database tests (tenancy isolation) against the local Supabase stack
+test-db: ## run the database tests (tenancy, roles, audit, storage, data model) against the local Supabase stack
 	npx supabase test db
+
+seed-demo: ## load synthetic demo data (two organisations) into the local Supabase stack; reset the database first
+	@eval "$$(npx supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')" && \
+		SUPABASE_URL=$$API_URL SUPABASE_SERVICE_ROLE_KEY=$$SERVICE_ROLE_KEY \
+		node scripts/seed-demo.mjs --password "$${DEMO_PASSWORD:-demo-password}"
 
 test-e2e: start-e2e
 	npx playwright test --ui

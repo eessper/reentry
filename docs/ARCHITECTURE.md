@@ -32,7 +32,7 @@ Atomic CRM is a **single-team** CRM. Every finding below is a problem for a mult
 | F4 | `configuration` is a single global row editable by any admin, so one organisation's admin would change settings for everyone. | High | **Session 1** (made per-organisation) |
 | F5 | Foreign keys don't check organisation, so a row could point at another organisation's record (for example a note attached to someone else's contact). | High | **Session 1** (composite foreign keys) |
 | F6 | The `attachments` storage bucket is **public**: anyone with a file's URL can download it without logging in, and any logged-in user can list every file. | Critical | **Session 2** (fixed: private bucket, organisation-scoped paths, signed URLs) |
-| F7 | Saving a contact sends a hash of their email to **gravatar.com** and their email domain to **favicon.show** (US services). That breaches the UK/EU residency rule. | High | **Session 3** (new `service_users` table has no such trigger; contacts are retired) |
+| F7 | Saving a contact sends a hash of their email to **gravatar.com** and their email domain to **favicon.show** (US services). That breaches the UK/EU residency rule. | High | **Session 3** added `service_users`, which has no such trigger; the leak goes away when the contacts screens are retired in **Session 4** |
 | F8 | `contacts.tags` and `deals.contact_ids` are arrays of ids with no foreign key, so they can hold ids from another organisation. RLS still hides the other organisation's rows, so nothing leaks, but the data is untidy. | Low | Retired with the CRM tables in Session 3 |
 | F9 | The `delete_note_attachments` edge function accepts any signed-in user's token and deletes whatever storage paths it is given, in any organisation. | High | **Session 2** (fixed: it only drains a queue the database fills) |
 | F10 | The `postmark` inbound-email function writes contacts and notes with the service role. After Session 1 those writes fail (no organisation to stamp), so it fails closed; it must be removed or tenant-scoped before deployment. | Medium | **Session 2** (fixed: removed) |
@@ -114,13 +114,29 @@ When a note loses an attachment (edit or delete), the `cleanup_note_attachments`
 
 Files uploaded before Session 2 sit at the bucket root, outside every organisation folder, so only the service role can reach them now.
 
+## 3c. Service users (Session 3)
+
+All in `supabase/schemas/08_service_users.sql`, following the tenancy (section 3) and role (section 3b) patterns.
+
+| Table | Notes |
+|---|---|
+| `service_users` | `display_name`, `reference_code` (`RE-12345`, unique per organisation), `release_date`, `risk_tier`, `assigned_worker_id` (a staff profile, `sales.id`), `consent_status`, `status`. Assignable like contacts: key workers see the people assigned to them. |
+| `support_profiles` | One per service user, created with defaults by a trigger. Risk pathway, CBT module, check-in frequency and the three escalation thresholds (range-checked). `version` goes up on every change, and `updated_by` records who made it. |
+| `escalations` | Trigger type, severity, `open` → `acknowledged` → `resolved`. A trigger stamps `acknowledged_at` and `resolved_at`; only leads delete. |
+| `activity_events` | The live feed (`checkin`, `missed_checkin`, `cbt_deploy`, `logistics`, `escalation`, `override`, `profile_change`). App roles can add events but never change or remove them. |
+
+- `programme_day` is derived (day 1 is the release date) in the `service_users_summary` view, with the count of unresolved escalations. A stored column can't depend on today's date.
+- All four tables are audited, and `log_record_view` covers service users and their profiles.
+- Phase 2 hooks: an open escalation is the signal that must stop AI replies, and `escalations.opened_at` and `acknowledged_at` are what an unacknowledged-escalation timer will read.
+- Demo data comes from `scripts/seed-demo.mjs` (`make seed-demo`): two fictional organisations with an admin, a clinical lead, two key workers and a viewer each, 15 service users with configured profiles, a few open escalations and a week of activity.
+
 ## 4. Mapping the CRM onto the brief
 
 | Atomic CRM | Re-entry | Plan |
 |---|---|---|
 | `sales` | Staff profile (key workers, leads, admins) | **Keep**, tenant-scoped (Session 1); role moves to `memberships` (Session 2) |
 | `configuration` | Per-organisation settings and branding | **Keep**, one row per organisation (Session 1) |
-| `contacts` | Service users | **Replace** with a new `service_users` table (Session 3). Contacts carry sales baggage (companies, newsletter, gravatar lookups, merge logic) that we don't want near health data. |
+| `contacts` | Service users | **Replaced** by the `service_users` table (Session 3). Contacts carry sales baggage (companies, newsletter, gravatar lookups, merge logic) that we don't want near health data; the table goes when the Session 4 screens replace its pages. |
 | `contact_notes`, `tasks` | Case notes and actions | **Rebuild** against `service_users` in Session 3 if the screens need them; the Phase 1 screens don't require them. |
 | `companies`, `deals`, `deal_notes`, `tags` | — | **Retire**: hide the screens in Session 4, drop the tables once nothing references them. |
 | `activity_log` view | Activity feed | **Replace** with the `activity_events` table from the brief (Session 3). |
@@ -136,6 +152,7 @@ Files uploaded before Session 2 sit at the bucket root, outside every organisati
 - The tenancy suite (`supabase/tests/tenancy_isolation.test.sql`) creates two organisations with users and data, then proves, for every tenant table, that a user in one organisation can't select, insert, update or delete the other organisation's rows, and can't create cross-organisation links.
 - The roles suite (`roles_permissions.test.sql`) signs in as each role and proves what it can see and change, including that key workers can't see or touch colleagues' records and viewers get no individual records.
 - The audit suite (`audit_log.test.sql`) proves every insert, update and delete on every audited table writes a log row, views are logged, and nobody (app roles, service role, owner) can change or remove log rows.
+- The data model suite (`service_users_model.test.sql`) covers the rules the database applies by itself: programme day, default profiles, versioning, escalation timestamps and value constraints.
 - The storage suite (`storage_attachments.test.sql`) proves the bucket is private, who can read and upload what, and that the deletion queue only ever holds the note's own organisation's orphaned files.
 - Frontend and edge-function unit tests stay on Vitest (`make test`).
 

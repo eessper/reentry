@@ -17,7 +17,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(71);
+select plan(96);
 
 -- Deferred triggers (handle_new_user) fire at the end of each statement
 -- instead of at commit, which this transaction never reaches.
@@ -80,6 +80,19 @@ insert into public.deal_notes (id, deal_id, text, organisation_id, sales_id) val
 
 insert into public.tags (id, name, color, organisation_id) values
     (9001, 'alpha-tag', '#eeeeee', 'a0000000-0000-0000-0000-000000000000');
+
+-- Service user 9101 is Kim's, 9102 is Ken's. Profiles come from a trigger.
+insert into public.service_users (id, display_name, reference_code, release_date, organisation_id, assigned_worker_id) values
+    (9101, 'Kims Person', 'RE-90101', current_date - 5, 'a0000000-0000-0000-0000-000000000000', (select kim from ids)),
+    (9102, 'Kens Person', 'RE-90102', current_date - 5, 'a0000000-0000-0000-0000-000000000000', (select ken from ids));
+
+insert into public.escalations (id, service_user_id, trigger_type, severity, organisation_id) values
+    (9101, 9101, 'missed_checkins', 'medium', 'a0000000-0000-0000-0000-000000000000'),
+    (9102, 9102, 'keyword', 'high', 'a0000000-0000-0000-0000-000000000000');
+
+insert into public.activity_events (id, service_user_id, type, summary, organisation_id) values
+    (9101, 9101, 'checkin', 'Kims person checked in', 'a0000000-0000-0000-0000-000000000000'),
+    (9102, 9102, 'checkin', 'Kens person checked in', 'a0000000-0000-0000-0000-000000000000');
 
 create function pg_temp.sign_in(user_id text)
 returns void
@@ -256,9 +269,91 @@ select throws_ok($$update public.memberships set role = 'org_admin' where user_i
     '42501', null, 'org admin: roles change only through the users edge function (service role), not directly');
 
 -------------------------------------------------------------------------------
+-- Service users, profiles, escalations and activity
+-------------------------------------------------------------------------------
+
+-- Key worker (Kim)
+select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e1');
+
+select results_eq($$select id from public.service_users$$, $$values (9101::bigint)$$,
+    'key worker: sees only the service users assigned to them');
+select results_eq($$select id from public.service_users_summary$$, $$values (9101::bigint)$$,
+    'key worker: the cohort view shows only their service users');
+select results_eq($$select service_user_id from public.support_profiles$$, $$values (9101::bigint)$$,
+    'key worker: sees only their service users'' profiles');
+select results_eq($$select id from public.escalations$$, $$values (9101::bigint)$$,
+    'key worker: sees only their service users'' escalations');
+select results_eq($$select id from public.activity_events$$, $$values (9101::bigint)$$,
+    'key worker: sees only their service users'' activity');
+
+update public.support_profiles set active_cbt_module = 'urge_surfing' where service_user_id = 9101;
+select results_eq(
+    $$select active_cbt_module::text, version, updated_by from public.support_profiles where service_user_id = 9101$$,
+    format($$values ('urge_surfing', 2, %s::bigint)$$, (select kim from ids)),
+    'key worker: can configure an assigned person''s profile; the version goes up and records who changed it');
+update public.escalations set status = 'acknowledged', notes = 'Called them back' where id = 9101;
+select ok((select acknowledged_at is not null from public.escalations where id = 9101),
+    'key worker: can acknowledge an escalation for their person (time stamped)');
+insert into public.activity_events (service_user_id, type, summary) values (9101, 'logistics', 'Booked a housing appointment');
+select is((select count(*) from public.activity_events where service_user_id = 9101), 2::bigint,
+    'key worker: can record activity for their person');
+
+with changed as (update public.support_profiles set keyword_sensitivity = 1 where service_user_id = 9102 returning 1)
+select is((select count(*) from changed), 0::bigint, 'key worker: cannot change a colleague''s person''s profile');
+with changed as (update public.escalations set status = 'resolved' where id = 9102 returning 1)
+select is((select count(*) from changed), 0::bigint, 'key worker: cannot handle a colleague''s escalation');
+select throws_ok($$insert into public.escalations (service_user_id, trigger_type, severity) values (9102, 'manual', 'low')$$, '42501', null,
+    'key worker: cannot open an escalation for someone not assigned to them');
+select throws_ok($$insert into public.activity_events (service_user_id, type, summary) values (9102, 'override', 'sneaky')$$, '42501', null,
+    'key worker: cannot record activity for someone not assigned to them');
+select throws_ok(format('update public.service_users set assigned_worker_id = %s where id = 9101', (select ken from ids)), '42501', null,
+    'key worker: cannot reassign their person to someone else');
+select throws_ok($$insert into public.service_users (display_name, reference_code, release_date) values ('New', 'RE-90199', current_date)$$, '42501', null,
+    'key worker: cannot add service users');
+with removed as (delete from public.escalations where id = 9101 returning 1)
+select is((select count(*) from removed), 0::bigint, 'key worker: cannot delete escalations');
+select throws_ok($$update public.activity_events set summary = 'rewritten' where id = 9101$$, '42501', null,
+    'key worker: cannot rewrite the activity feed');
+select throws_ok($$delete from public.activity_events where id = 9101$$, '42501', null,
+    'key worker: cannot delete from the activity feed');
+
+-- Viewer (Vera)
+select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000f1');
+select is(
+    (select count(*) from public.service_users) + (select count(*) from public.service_users_summary)
+      + (select count(*) from public.support_profiles) + (select count(*) from public.escalations)
+      + (select count(*) from public.activity_events),
+    0::bigint,
+    'viewer: cannot read any service user, profile, escalation or activity event');
+select throws_ok($$select public.log_record_view('service_users', 9101)$$, '42501', null,
+    'viewer: cannot open a service user record');
+
+-- Clinical lead (Carla)
+select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000c1');
+select is((select count(*) from public.service_users), 2::bigint, 'clinical lead: sees every service user');
+update public.service_users set assigned_worker_id = (select kim from ids) where id = 9102;
+select is((select assigned_worker_id from public.service_users where id = 9102), (select kim from ids),
+    'clinical lead: can reassign a service user');
+insert into public.service_users (id, display_name, reference_code, release_date, assigned_worker_id)
+    values (9103, 'New Person', 'RE-90103', current_date, (select ken from ids));
+select is((select count(*) from public.support_profiles where service_user_id = 9103), 1::bigint,
+    'clinical lead: can add a service user, who gets a default profile');
+delete from public.escalations where id = 9102;
+select is((select count(*) from public.escalations where id = 9102), 0::bigint, 'clinical lead: can delete an escalation');
+
+-- After the reassignment, Kim sees both people and Ken only the new one
+select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e1');
+select results_eq($$select id from public.service_users order by id$$, $$values (9101::bigint), (9102::bigint)$$,
+    'key worker: gains the person reassigned to them');
+select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e2');
+select results_eq($$select id from public.service_users order by id$$, $$values (9103::bigint)$$,
+    'second key worker: loses the person reassigned away');
+
+-------------------------------------------------------------------------------
 -- Helper functions
 -------------------------------------------------------------------------------
 
+select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000a1');
 select ok(private.can_access_assigned('a0000000-0000-0000-0000-000000000000', (select kim from ids)),
     'can_access_assigned: an org admin can access a record assigned to anyone');
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e1');
