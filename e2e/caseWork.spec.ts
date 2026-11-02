@@ -27,7 +27,8 @@ test("a key worker writes a case note and an action, both in the audit trail", a
     .getByLabel("New case note")
     .fill("Called after the hostel move, settling in.");
   await page.getByRole("button", { name: "Add note" }).click();
-  await expect(page.getByText("Case note added")).toBeVisible();
+  // "Case note added" is both the notification and the new audit trail
+  // entry, so check the note itself here and the trail entry below.
   await expect(
     page.getByText("Called after the hostel move, settling in."),
   ).toBeVisible();
