@@ -4,13 +4,12 @@ import { getSupabaseClient } from "./supabase";
 
 /**
  * The attachments bucket is private. Files live under
- * `<organisation_id>/<folder>/<uuid><ext>`:
- * - `notes`: note attachments, readable only by staff who can see the note
- * - `shared`: logos and avatars, readable by the whole organisation
+ * `<organisation_id>/shared/<uuid><ext>`: logos and avatars, readable by the
+ * whole organisation. Nothing about service users is stored as a file.
  * Storage row-level security enforces this; the browser only ever gets
  * short-lived signed URLs.
  */
-export type AttachmentFolder = "notes" | "shared";
+export type AttachmentFolder = "shared";
 
 /** How long a signed URL handed to the browser stays valid, in seconds. */
 export const SIGNED_URL_TTL_SECONDS = 60 * 60;

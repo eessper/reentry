@@ -79,20 +79,6 @@ create or replace trigger audit_row_change after insert or update or delete on p
     for each row execute function private.audit_row_change();
 create or replace trigger audit_row_change after insert or update or delete on public.configuration
     for each row execute function private.audit_row_change();
-create or replace trigger audit_row_change after insert or update or delete on public.companies
-    for each row execute function private.audit_row_change();
-create or replace trigger audit_row_change after insert or update or delete on public.contacts
-    for each row execute function private.audit_row_change();
-create or replace trigger audit_row_change after insert or update or delete on public.contact_notes
-    for each row execute function private.audit_row_change();
-create or replace trigger audit_row_change after insert or update or delete on public.tasks
-    for each row execute function private.audit_row_change();
-create or replace trigger audit_row_change after insert or update or delete on public.deals
-    for each row execute function private.audit_row_change();
-create or replace trigger audit_row_change after insert or update or delete on public.deal_notes
-    for each row execute function private.audit_row_change();
-create or replace trigger audit_row_change after insert or update or delete on public.tags
-    for each row execute function private.audit_row_change();
 create or replace trigger audit_row_change after insert or update or delete on public.service_users
     for each row execute function private.audit_row_change();
 create or replace trigger audit_row_change after insert or update or delete on public.support_profiles
@@ -101,11 +87,15 @@ create or replace trigger audit_row_change after insert or update or delete on p
     for each row execute function private.audit_row_change();
 create or replace trigger audit_row_change after insert or update or delete on public.activity_events
     for each row execute function private.audit_row_change();
+create or replace trigger audit_row_change after insert or update or delete on public.case_notes
+    for each row execute function private.audit_row_change();
+create or replace trigger audit_row_change after insert or update or delete on public.case_actions
+    for each row execute function private.audit_row_change();
 
 -- Records that the caller opened a record. The UI calls it when a record's
 -- page is shown. Refuses records the caller can't see, with the same error
--- whether the record is hidden or missing. Covers service users, their
--- support profiles, and contacts (until the CRM screens are retired).
+-- whether the record is hidden or missing. Covers service users and their
+-- support profiles.
 create or replace function public.log_record_view(table_name text, record_id bigint)
 returns void
 language plpgsql
@@ -127,11 +117,6 @@ begin
         join public.service_users su on su.id = sp.service_user_id
       where sp.id = log_record_view.record_id
         and private.can_access_assigned(su.organisation_id, su.assigned_worker_id);
-    when 'contacts' then
-      select c.organisation_id into record_organisation_id
-      from public.contacts c
-      where c.id = log_record_view.record_id
-        and private.can_access_assigned(c.organisation_id, c.sales_id);
     else
       raise exception 'Views of % are not logged', log_record_view.table_name using errcode = '22023';
   end case;
@@ -147,7 +132,7 @@ $$;
 
 -- Org admins and clinical leads read their organisation's whole log; key
 -- workers read the history of the service users (and their profiles and
--- escalations) and contacts they can see.
+-- escalations, case notes and actions) they can see.
 alter table public.audit_log enable row level security;
 
 create policy "Leads read the log, key workers their people's history" on public.audit_log for select to authenticated
@@ -158,7 +143,8 @@ create policy "Leads read the log, key workers their people's history" on public
             or (table_name = 'service_users' and exists (select 1 from public.service_users su where su.id::text = record_id))
             or (table_name = 'support_profiles' and exists (select 1 from public.support_profiles sp where sp.id::text = record_id))
             or (table_name = 'escalations' and exists (select 1 from public.escalations e where e.id::text = record_id))
-            or (table_name = 'contacts' and exists (select 1 from public.contacts c where c.id::text = record_id))
+            or (table_name = 'case_notes' and exists (select 1 from public.case_notes n where n.id::text = record_id))
+            or (table_name = 'case_actions' and exists (select 1 from public.case_actions a where a.id::text = record_id))
         )
     );
 

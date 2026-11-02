@@ -17,7 +17,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(96);
+select plan(61);
 
 -- Deferred triggers (handle_new_user) fire at the end of each statement
 -- instead of at commit, which this transaction never reaches.
@@ -52,35 +52,6 @@ select
     (select id from public.sales where email = 'vera@alpha.test') as vera;
 grant select on ids to authenticated;
 
--- Contacts 9001 and 9003 are Kim's, 9002 is Ken's, 9004 is unassigned.
-insert into public.companies (id, name, organisation_id) values
-    (9001, 'Alpha Housing Trust', 'a0000000-0000-0000-0000-000000000000');
-
-insert into public.contacts (id, first_name, last_name, organisation_id, company_id, sales_id) values
-    (9001, 'Kimsclient', 'One', 'a0000000-0000-0000-0000-000000000000', 9001, (select kim from ids)),
-    (9002, 'Kensclient', 'Two', 'a0000000-0000-0000-0000-000000000000', 9001, (select ken from ids)),
-    (9003, 'Kimsclient', 'Three', 'a0000000-0000-0000-0000-000000000000', 9001, (select kim from ids)),
-    (9004, 'Nobodys', 'Four', 'a0000000-0000-0000-0000-000000000000', 9001, (select alice from ids));
-
-insert into public.contact_notes (id, contact_id, text, organisation_id, sales_id) values
-    (9001, 9001, 'Kim client note', 'a0000000-0000-0000-0000-000000000000', (select kim from ids)),
-    (9002, 9002, 'Ken client note', 'a0000000-0000-0000-0000-000000000000', (select ken from ids));
-
-insert into public.tasks (id, contact_id, text, organisation_id, sales_id) values
-    (9001, 9001, 'Kim client task', 'a0000000-0000-0000-0000-000000000000', (select kim from ids)),
-    (9002, 9002, 'Ken client task', 'a0000000-0000-0000-0000-000000000000', (select ken from ids));
-
-insert into public.deals (id, name, stage, organisation_id, company_id, sales_id) values
-    (9001, 'Kim deal', 'opportunity', 'a0000000-0000-0000-0000-000000000000', 9001, (select kim from ids)),
-    (9002, 'Ken deal', 'opportunity', 'a0000000-0000-0000-0000-000000000000', 9001, (select ken from ids));
-
-insert into public.deal_notes (id, deal_id, text, organisation_id, sales_id) values
-    (9001, 9001, 'Kim deal note', 'a0000000-0000-0000-0000-000000000000', (select kim from ids)),
-    (9002, 9002, 'Ken deal note', 'a0000000-0000-0000-0000-000000000000', (select ken from ids));
-
-insert into public.tags (id, name, color, organisation_id) values
-    (9001, 'alpha-tag', '#eeeeee', 'a0000000-0000-0000-0000-000000000000');
-
 -- Service user 9101 is Kim's, 9102 is Ken's. Profiles come from a trigger.
 insert into public.service_users (id, display_name, reference_code, release_date, organisation_id, assigned_worker_id) values
     (9101, 'Kims Person', 'RE-90101', current_date - 5, 'a0000000-0000-0000-0000-000000000000', (select kim from ids)),
@@ -93,6 +64,14 @@ insert into public.escalations (id, service_user_id, trigger_type, severity, org
 insert into public.activity_events (id, service_user_id, type, summary, organisation_id) values
     (9101, 9101, 'checkin', 'Kims person checked in', 'a0000000-0000-0000-0000-000000000000'),
     (9102, 9102, 'checkin', 'Kens person checked in', 'a0000000-0000-0000-0000-000000000000');
+
+insert into public.case_notes (id, service_user_id, body, author_sales_id, organisation_id) values
+    (9101, 9101, 'Kims note', (select kim from ids), 'a0000000-0000-0000-0000-000000000000'),
+    (9102, 9102, 'Kens note', (select ken from ids), 'a0000000-0000-0000-0000-000000000000');
+
+insert into public.case_actions (id, service_user_id, title, created_by, organisation_id) values
+    (9101, 9101, 'Kims action', (select kim from ids), 'a0000000-0000-0000-0000-000000000000'),
+    (9102, 9102, 'Kens action', (select ken from ids), 'a0000000-0000-0000-0000-000000000000');
 
 create function pg_temp.sign_in(user_id text)
 returns void
@@ -117,152 +96,25 @@ select results_eq(
     'sales_summary: every staff profile with its role from memberships');
 
 -------------------------------------------------------------------------------
--- Key worker (Kim)
+-- Organisation settings, staff list and admin rights
 -------------------------------------------------------------------------------
 
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e1');
-
-select results_eq($$select id from public.contacts order by id$$, $$values (9001::bigint), (9003::bigint)$$,
-    'key worker: sees only the contacts assigned to them');
-select results_eq($$select id from public.contacts_summary order by id$$, $$values (9001::bigint), (9003::bigint)$$,
-    'key worker: contacts_summary shows only their contacts');
-select results_eq($$select id from public.contact_notes$$, $$values (9001::bigint)$$,
-    'key worker: sees only notes on their contacts');
-select results_eq($$select id from public.tasks$$, $$values (9001::bigint)$$,
-    'key worker: sees only tasks on their contacts');
-select results_eq($$select id from public.deals$$, $$values (9001::bigint)$$,
-    'key worker: sees only the deals assigned to them');
-select results_eq($$select id from public.deal_notes$$, $$values (9001::bigint)$$,
-    'key worker: sees only notes on their deals');
-select is((select count(*) from public.global_search('Kensclient')), 0::bigint,
-    'key worker: global_search does not find unassigned contacts');
-select is((select count(*) from public.global_search('Kimsclient')), 2::bigint,
-    'key worker: global_search finds their own contacts');
-select is((select count(*) from public.activity_log where id like 'contact.9002.%' or id like 'contactNote.9002.%'), 0::bigint,
-    'key worker: activity_log hides unassigned contacts and their notes');
-select is((select count(*) from public.companies), 1::bigint,
-    'key worker: sees the organisation''s companies');
-
--- Writes on their own records
-update public.contacts set background = 'updated by Kim' where id = 9001;
-select is((select background from public.contacts where id = 9001), 'updated by Kim',
-    'key worker: can update an assigned contact');
-insert into public.contact_notes (contact_id, text) values (9001, 'Kim adds a note');
-select is((select count(*) from public.contact_notes where contact_id = 9001), 2::bigint,
-    'key worker: can add a note to an assigned contact');
-insert into public.tasks (contact_id, text) values (9001, 'Kim adds a task');
-select is((select count(*) from public.tasks where contact_id = 9001), 2::bigint,
-    'key worker: can add a task to an assigned contact');
-
--- Records assigned to someone else
-with changed as (update public.contacts set background = 'hijacked' where id = 9002 returning 1)
-select is((select count(*) from changed), 0::bigint, 'key worker: cannot update a contact assigned to someone else');
-with changed as (update public.contact_notes set text = 'hijacked' where id = 9002 returning 1)
-select is((select count(*) from changed), 0::bigint, 'key worker: cannot update a note on someone else''s contact');
-with changed as (update public.deals set name = 'hijacked' where id = 9002 returning 1)
-select is((select count(*) from changed), 0::bigint, 'key worker: cannot update a deal assigned to someone else');
-with removed as (delete from public.tasks where id = 9002 returning 1)
-select is((select count(*) from removed), 0::bigint, 'key worker: cannot delete a task on someone else''s contact');
-select throws_ok($$insert into public.contact_notes (contact_id, text) values (9002, 'sneaky')$$, '42501', null,
-    'key worker: cannot add a note to someone else''s contact');
-select throws_ok($$insert into public.tasks (contact_id, text) values (9002, 'sneaky')$$, '42501', null,
-    'key worker: cannot add a task to someone else''s contact');
-select throws_ok($$insert into public.deal_notes (deal_id, text) values (9002, 'sneaky')$$, '42501', null,
-    'key worker: cannot add a note to someone else''s deal');
-select throws_ok($$update public.contact_notes set contact_id = 9002 where id = 9001$$, '42501', null,
-    'key worker: cannot move a note onto someone else''s contact');
-
--- Assignment and lifecycle are for leads
-select throws_ok(format('update public.contacts set sales_id = %s where id = 9001', (select ken from ids)), '42501', null,
-    'key worker: cannot reassign their contact to someone else');
-select throws_ok($$insert into public.contacts (first_name, last_name) values ('New', 'Person')$$, '42501', null,
-    'key worker: cannot create contacts');
-with removed as (delete from public.contacts where id = 9003 returning 1)
-select is((select count(*) from removed), 0::bigint, 'key worker: cannot delete contacts, even their own');
-select throws_ok($$select public.merge_contacts(9003, 9001)$$, '42501', null,
-    'key worker: merge_contacts refuses instead of half-merging');
-select results_eq($$select id from public.contacts order by id$$, $$values (9001::bigint), (9003::bigint)$$,
-    'key worker: the refused merge left both contacts in place');
-
 select ok(not public.is_admin(), 'key worker: is_admin is false');
 
--------------------------------------------------------------------------------
--- Second key worker (Ken) sees his own records and not Kim's
--------------------------------------------------------------------------------
-
-select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e2');
-
-select results_eq($$select id from public.contacts$$, $$values (9002::bigint)$$,
-    'second key worker: sees only their own contact');
-select is((select count(*) from public.contact_notes where contact_id = 9001), 0::bigint,
-    'second key worker: cannot see notes Kim added to her contact');
-
--------------------------------------------------------------------------------
--- Viewer (Vera): no individual records
--------------------------------------------------------------------------------
-
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000f1');
-
-select is((select count(*) from public.contacts), 0::bigint, 'viewer: cannot read contacts');
-select is((select count(*) from public.contacts_summary), 0::bigint, 'viewer: cannot read contacts_summary');
-select is((select count(*) from public.contact_notes), 0::bigint, 'viewer: cannot read contact notes');
-select is((select count(*) from public.tasks), 0::bigint, 'viewer: cannot read tasks');
-select is((select count(*) from public.deals), 0::bigint, 'viewer: cannot read deals');
-select is((select count(*) from public.deal_notes), 0::bigint, 'viewer: cannot read deal notes');
-select is((select count(*) from public.companies), 0::bigint, 'viewer: cannot read companies');
-select is((select count(*) from public.companies_summary), 0::bigint, 'viewer: cannot read companies_summary');
-select is((select count(*) from public.activity_log), 0::bigint, 'viewer: activity_log is empty');
-select is((select count(*) from public.global_search('client')), 0::bigint, 'viewer: global_search finds nothing');
 select is((select count(*) from public.audit_log), 0::bigint, 'viewer: cannot read the audit log');
-select throws_ok($$insert into public.contacts (first_name) values ('New')$$, '42501', null,
-    'viewer: cannot create contacts');
-select throws_ok($$insert into public.companies (name) values ('New')$$, '42501', null,
-    'viewer: cannot create companies');
-select throws_ok($$insert into public.tags (name, color) values ('new', '#000000')$$, '42501', null,
-    'viewer: cannot create tags');
-select throws_ok($$select public.log_record_view('contacts', 9001)$$, '42501', null,
-    'viewer: cannot open (log a view of) an individual record');
 select is((select count(*) from public.sales), 5::bigint, 'viewer: can read the staff list');
-select is((select count(*) from public.tags), 1::bigint, 'viewer: can read tags');
 select is((select count(*) from public.configuration), 1::bigint, 'viewer: can read the organisation configuration');
 select is((select count(*) from public.organisations), 1::bigint, 'viewer: can read their organisation');
 
--------------------------------------------------------------------------------
--- Clinical lead (Carla): everything in the organisation, including assignments
--------------------------------------------------------------------------------
-
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000c1');
-
-select is((select count(*) from public.contacts), 4::bigint, 'clinical lead: sees every contact in the organisation');
-select is((select count(*) from public.contact_notes), 3::bigint, 'clinical lead: sees every contact note');
-select is((select count(*) from public.deals), 2::bigint, 'clinical lead: sees every deal');
-update public.contacts set sales_id = (select ken from ids) where id = 9003;
-select is((select sales_id from public.contacts where id = 9003), (select ken from ids),
-    'clinical lead: can reassign a contact to another key worker');
-insert into public.contacts (id, first_name, last_name, sales_id) values (9005, 'Brand', 'New', (select kim from ids));
-select is((select count(*) from public.contacts where id = 9005), 1::bigint, 'clinical lead: can create a contact');
-delete from public.contacts where id = 9004;
-select is((select count(*) from public.contacts where id = 9004), 0::bigint, 'clinical lead: can delete a contact');
 with changed as (update public.configuration set config = '{"title": "Lead"}' where id = 1 returning 1)
 select is((select count(*) from changed), 0::bigint, 'clinical lead: cannot change organisation settings');
 select ok(not public.is_admin(), 'clinical lead: is_admin is false');
 
--- Reassignment takes effect for the key workers straight away
-select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e1');
-select results_eq($$select id from public.contacts order by id$$, $$values (9001::bigint), (9005::bigint)$$,
-    'key worker: loses the contact reassigned away and gains the one assigned to them');
-select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e2');
-select results_eq($$select id from public.contacts order by id$$, $$values (9002::bigint), (9003::bigint)$$,
-    'second key worker: sees the contact reassigned to them');
-
--------------------------------------------------------------------------------
--- Org admin (Alice): everything, plus organisation settings
--------------------------------------------------------------------------------
-
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000a1');
-
-select is((select count(*) from public.contacts), 4::bigint, 'org admin: sees every contact in the organisation');
-select is((select count(*) from public.tasks), 3::bigint, 'org admin: sees every task');
+select is((select count(*) from public.service_users), 2::bigint, 'org admin: sees every service user in the organisation');
 update public.configuration set config = '{"title": "Admin"}' where id = 1;
 select is((select config ->> 'title' from public.configuration), 'Admin', 'org admin: can change organisation settings');
 select ok(public.is_admin(), 'org admin: is_admin is true');
@@ -318,14 +170,47 @@ select throws_ok($$update public.activity_events set summary = 'rewritten' where
 select throws_ok($$delete from public.activity_events where id = 9101$$, '42501', null,
     'key worker: cannot delete from the activity feed');
 
+-- Case notes and actions (Kim)
+select results_eq($$select id from public.case_notes$$, $$values (9101::bigint)$$,
+    'key worker: sees only the case notes of their service users');
+select results_eq($$select id from public.case_actions$$, $$values (9101::bigint)$$,
+    'key worker: sees only the case actions of their service users');
+insert into public.case_notes (id, service_user_id, body, author_sales_id) values (9103, 9101, 'Kim writes', (select ken from ids));
+select is((select author_sales_id from public.case_notes where id = 9103), (select kim from ids),
+    'key worker: a note they write is always in their name, whatever author is sent');
+update public.case_notes set body = 'Kim edits' where id = 9103;
+select is((select body from public.case_notes where id = 9103), 'Kim edits', 'key worker: can edit their own note');
+update public.case_notes set author_sales_id = (select ken from ids), service_user_id = 9102 where id = 9103;
+select results_eq($$select author_sales_id, service_user_id from public.case_notes where id = 9103$$,
+    format($$values (%s::bigint, 9101::bigint)$$, (select kim from ids)),
+    'key worker: editing a note cannot change its author or move it to another person');
+select throws_ok($$insert into public.case_notes (service_user_id, body) values (9102, 'sneaky')$$, '42501', null,
+    'key worker: cannot write a note about someone not assigned to them');
+with removed as (delete from public.case_notes where id = 9103 returning 1)
+select is((select count(*) from removed), 0::bigint, 'key worker: cannot delete notes, even their own');
+insert into public.case_actions (id, service_user_id, title, due_date) values (9103, 9101, 'Book GP appointment', current_date + 2);
+select is((select created_by from public.case_actions where id = 9103), (select kim from ids),
+    'key worker: can add an action for their person, created in their name');
+update public.case_actions set done_at = now() where id = 9103;
+select ok((select done_at is not null from public.case_actions where id = 9103), 'key worker: can mark an action done');
+with changed as (update public.case_actions set title = 'hijacked' where id = 9102 returning 1)
+select is((select count(*) from changed), 0::bigint, 'key worker: cannot change a colleague''s person''s action');
+select throws_ok($$insert into public.case_actions (service_user_id, title) values (9102, 'sneaky')$$, '42501', null,
+    'key worker: cannot add an action for someone not assigned to them');
+delete from public.case_actions where id = 9103;
+select is((select count(*) from public.case_actions where id = 9103), 0::bigint, 'key worker: can delete an action they created');
+
 -- Viewer (Vera)
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000f1');
 select is(
     (select count(*) from public.service_users) + (select count(*) from public.service_users_summary)
       + (select count(*) from public.support_profiles) + (select count(*) from public.escalations)
-      + (select count(*) from public.activity_events),
+      + (select count(*) from public.activity_events) + (select count(*) from public.case_notes)
+      + (select count(*) from public.case_actions),
     0::bigint,
-    'viewer: cannot read any service user, profile, escalation or activity event');
+    'viewer: cannot read any service user, profile, escalation, activity event, case note or action');
+select throws_ok($$insert into public.case_notes (service_user_id, body) values (9101, 'viewer note')$$, '42501', null,
+    'viewer: cannot write case notes');
 select throws_ok($$select public.log_record_view('service_users', 9101)$$, '42501', null,
     'viewer: cannot open a service user record');
 
@@ -341,6 +226,13 @@ select is((select count(*) from public.support_profiles where service_user_id = 
     'clinical lead: can add a service user, who gets a default profile');
 delete from public.escalations where id = 9102;
 select is((select count(*) from public.escalations where id = 9102), 0::bigint, 'clinical lead: can delete an escalation');
+select is((select count(*) from public.case_notes), 3::bigint, 'clinical lead: sees every case note');
+with changed as (update public.case_notes set body = 'rewritten' where id = 9101 returning 1)
+select is((select count(*) from changed), 0::bigint, 'clinical lead: cannot rewrite a colleague''s note');
+delete from public.case_notes where id = 9102;
+select is((select count(*) from public.case_notes where id = 9102), 0::bigint, 'clinical lead: can delete a note');
+delete from public.case_actions where id = 9101;
+select is((select count(*) from public.case_actions where id = 9101), 0::bigint, 'clinical lead: can delete any action');
 
 -- After the reassignment, Kim sees both people and Ken only the new one
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e1');

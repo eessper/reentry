@@ -10,7 +10,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(25);
 
 set constraints all immediate;
 
@@ -131,6 +131,7 @@ select throws_ok($$select public.control_tower_stats()$$, '42501', null, 'stats:
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e1');
 update public.support_profiles set keyword_sensitivity = 9 where service_user_id = 9001;
 select public.log_record_view('service_users', 9001);
+insert into public.case_notes (service_user_id, body) values (9001, 'Discussed housing options');
 
 select ok(
     exists (select 1 from public.service_user_history(9001)
@@ -142,6 +143,10 @@ select ok(
 select ok(
     exists (select 1 from public.service_user_history(9001) where table_name = 'escalations'),
     'history: shows the service user''s escalations');
+select ok(
+    exists (select 1 from public.service_user_history(9001)
+            where table_name = 'case_notes' and action = 'create' and actor_name = 'Kim Test'),
+    'history: shows case notes written about the service user');
 select is((select count(*) from public.service_user_history(9005)), 0::bigint,
     'history: a key worker gets nothing for a colleague''s service user');
 

@@ -7,11 +7,10 @@
 -- organisation_id defaulting to the caller's organisation, a unique
 -- (id, organisation_id) key, and composite foreign keys so no row can point
 -- at another organisation's row. Role rules follow 05_policies.sql:
--- service_users is assignable (like contacts, through assigned_worker_id);
+-- service_users is assignable (through assigned_worker_id);
 -- the other tables are children that follow their service user.
 --
--- None of these tables has a trigger calling outside services (unlike
--- contacts and companies, see finding F7).
+-- None of these tables has a trigger calling outside services.
 --
 
 create type public.risk_tier as enum ('low', 'moderate', 'moderate_high', 'high');
