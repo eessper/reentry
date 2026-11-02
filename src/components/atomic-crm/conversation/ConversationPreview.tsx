@@ -41,7 +41,7 @@ const ConversationPreviewContent = ({
 
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [messages.length]);
+  }, [messages.length, isSending]);
 
   return (
     <Card>
@@ -81,6 +81,14 @@ const ConversationPreviewContent = ({
           {messages.map((message) => (
             <Bubble key={message.id} message={message} />
           ))}
+          {isSending ? (
+            <p
+              className="self-start rounded-lg border bg-background px-3 py-2 text-sm text-muted-foreground"
+              aria-label={translate("crm.conversation.typing")}
+            >
+              …
+            </p>
+          ) : null}
           <div ref={endRef} />
         </div>
         <form
@@ -107,7 +115,7 @@ const ConversationPreviewContent = ({
           <Button
             variant="outline"
             size="sm"
-            className="self-start"
+            className="self-start h-auto whitespace-normal text-left"
             onClick={simulateNoStaffReply}
           >
             {translate("crm.conversation.simulate_no_reply")}

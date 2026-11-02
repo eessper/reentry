@@ -1,6 +1,10 @@
 import { RecordContextProvider } from "ra-core";
 import { render } from "vitest-browser-react";
-import { buildServiceUser, StoryWrapper } from "@/test/StoryWrapper";
+import {
+  buildEscalation,
+  buildServiceUser,
+  StoryWrapper,
+} from "@/test/StoryWrapper";
 import { EscalationsForServiceUser } from "../escalations/EscalationsForServiceUser";
 import type { SupportProfile } from "../types";
 import { ConversationPreview } from "./ConversationPreview";
@@ -20,10 +24,16 @@ const profile: SupportProfile = {
   updated_by: null,
 };
 
-const renderPreview = () =>
+const renderPreview = (
+  escalations = [] as ReturnType<typeof buildEscalation>[],
+) =>
   render(
     <StoryWrapper
-      data={{ service_users: [serviceUser], support_profiles: [profile] }}
+      data={{
+        service_users: [serviceUser],
+        support_profiles: [profile],
+        escalations,
+      }}
     >
       <RecordContextProvider value={serviceUser}>
         <ConversationPreview />
@@ -94,5 +104,22 @@ describe("ConversationPreview", () => {
     await expect
       .element(screen.getByText(/Nobody from your team has been able to reply/))
       .toBeVisible();
+  });
+
+  it("stays paused for someone who already has an escalation open", async () => {
+    const screen = await renderPreview([
+      buildEscalation({ service_user_id: 1, status: "acknowledged" }),
+    ]);
+
+    await sendMessage(screen, "bad cravings tonight");
+
+    await expect
+      .element(
+        screen.getByText("AI replies paused while the escalation is open"),
+      )
+      .toBeVisible();
+    await expect
+      .element(screen.getByText(/Cravings come in waves/))
+      .not.toBeInTheDocument();
   });
 });

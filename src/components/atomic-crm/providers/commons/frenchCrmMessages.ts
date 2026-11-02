@@ -244,6 +244,7 @@ export const frenchCrmMessages = {
       placeholder: "Écrivez comme %{name}…",
       message_label: "Message de la personne suivie",
       send: "Envoyer",
+      typing: "L'assistant écrit",
       paused:
         "Les réponses automatiques sont suspendues : une alerte est ouverte pour cette personne. Elles reprennent quand l'équipe la clôt.",
       simulate_no_reply:

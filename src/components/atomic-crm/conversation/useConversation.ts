@@ -49,17 +49,17 @@ export const useConversation = (serviceUser: ServiceUser) => {
   const [messages, setMessages] = useState<ConversationMessage[]>(opening);
   const [isSending, setIsSending] = useState(false);
 
-  const { data: profiles } = useGetList<SupportProfile>("support_profiles", {
-    pagination: { page: 1, perPage: 1 },
-    sort: { field: "id", order: "ASC" },
-    filter: { service_user_id: serviceUser.id },
-  });
-  const profile = profiles?.[0];
-  const { data: escalations = [] } = useGetList<Escalation>("escalations", {
+  const openEscalationsQuery = {
     pagination: { page: 1, perPage: 20 },
-    sort: { field: "opened_at", order: "DESC" },
+    sort: { field: "opened_at", order: "DESC" as const },
     filter: { service_user_id: serviceUser.id, "status@neq": "resolved" },
-  });
+  };
+  // For the banner and buttons. Sending re-reads the database instead, so
+  // the pause never depends on whether this list has loaded yet.
+  const { data: escalations = [] } = useGetList<Escalation>(
+    "escalations",
+    openEscalationsQuery,
+  );
   const isPaused = escalations.length > 0;
   const isAwaitingStaff = escalations.some(
     (escalation) => escalation.status === "open",
@@ -85,8 +85,29 @@ export const useConversation = (serviceUser: ServiceUser) => {
       data: { service_user_id: serviceUser.id, ...event },
     });
 
+  const hasOpenEscalation = async () =>
+    (
+      await dataProvider.getList<Escalation>(
+        "escalations",
+        openEscalationsQuery,
+      )
+    ).data.length > 0;
+
+  const currentProfile = async (): Promise<SupportProfile | undefined> =>
+    (
+      await dataProvider.getList<SupportProfile>("support_profiles", {
+        pagination: { page: 1, perPage: 1 },
+        sort: { field: "id", order: "ASC" },
+        filter: { service_user_id: serviceUser.id },
+      })
+    ).data[0];
+
   const handle = async (text: string) => {
-    if (isPaused) {
+    const [isPausedNow, profile] = await Promise.all([
+      hasOpenEscalation(),
+      currentProfile(),
+    ]);
+    if (isPausedNow) {
       say("system", "assistant_paused");
       say("assistant", PAUSED_REPLY);
       return;

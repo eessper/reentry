@@ -241,6 +241,7 @@ export const englishCrmMessages = {
       placeholder: "Type as %{name} would…",
       message_label: "Message from the service user",
       send: "Send",
+      typing: "Assistant is typing",
       paused:
         "AI replies are paused: an escalation is open for this person. They resume when staff resolve it.",
       simulate_no_reply: "Simulate: nobody acknowledges within 15 minutes",
