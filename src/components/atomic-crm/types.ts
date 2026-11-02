@@ -194,6 +194,28 @@ export type ActivityEvent = {
   created_at: string;
 };
 
+/** What staff write down about a service user. The author is stamped by the database. */
+export type CaseNote = {
+  id: Identifier;
+  service_user_id: Identifier;
+  author_sales_id: Identifier | null;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/** A follow-up agreed for a service user; done when `done_at` is set. */
+export type CaseAction = {
+  id: Identifier;
+  service_user_id: Identifier;
+  title: string;
+  due_date: string | null;
+  assigned_to: Identifier | null;
+  done_at: string | null;
+  created_by: Identifier | null;
+  created_at: string;
+};
+
 export type StabilityDay = {
   day: string;
   stable: number;

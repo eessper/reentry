@@ -143,6 +143,40 @@ export const frenchCrmMessages = {
       },
       empty: "Aucune activité",
     },
+    case_notes: {
+      name: "Note de suivi |||| Notes de suivi",
+      fields: {
+        body: "Note",
+        author_sales_id: "Auteur",
+      },
+      new: "Nouvelle note de suivi",
+      placeholder: "Ce qui s'est passé, ce qui a été convenu, son état",
+      add: "Ajouter la note",
+      empty: "Aucune note de suivi",
+      system: "Système",
+      notifications: {
+        created: "Note de suivi ajoutée",
+      },
+    },
+    case_actions: {
+      name: "Action |||| Actions",
+      fields: {
+        title: "Action",
+        due_date: "Échéance",
+        assigned_to: "Assignée à",
+        done_at: "Terminée",
+      },
+      new: "Nouvelle action",
+      placeholder: "ex. Inscription chez un médecin",
+      add: "Ajouter l'action",
+      empty: "Aucune action en cours",
+      recently_done: "Terminées récemment",
+      due: "Échéance %{date}",
+      overdue: "En retard depuis %{date}",
+      notifications: {
+        created: "Action ajoutée",
+      },
+    },
     companies: {
       name: "Entreprise |||| Entreprises",
       forcedCaseName: "Entreprise",
@@ -534,6 +568,32 @@ export const frenchCrmMessages = {
         "Votre rôle n'affiche que des chiffres agrégés. Les dossiers individuels sont masqués.",
       error: "Les chiffres de la tour de contrôle n'ont pas pu être chargés.",
     },
+    demo: {
+      switch_title: "Changer d'utilisateur de démonstration",
+      viewing_as: "Vue de %{name} (%{role})",
+    },
+    conversation: {
+      title: "Aperçu WhatsApp",
+      simulated: "Simulation",
+      reset: "Recommencer la conversation",
+      placeholder: "Écrivez comme %{name}…",
+      message_label: "Message de la personne suivie",
+      send: "Envoyer",
+      paused:
+        "Les réponses automatiques sont suspendues : une alerte est ouverte pour cette personne. Elles reprennent quand l'équipe la clôt.",
+      simulate_no_reply:
+        "Simuler : personne ne prend l'alerte en charge sous 15 minutes",
+      disclaimer:
+        "Simulation pour les démonstrations et la formation. Rien n'est envoyé sur WhatsApp et les messages ne sont pas enregistrés ; les alertes et l'activité créées sont de vrais enregistrements.",
+      system: {
+        escalation_opened:
+          "Filtre de risque déclenché : alerte ouverte, réponses automatiques suspendues",
+        assistant_paused:
+          "Réponses automatiques suspendues tant que l'alerte est ouverte",
+        no_staff_reply:
+          "15 minutes plus tard, toujours pas prise en charge : contacts d'urgence envoyés",
+      },
+    },
     audit_trail: {
       title: "Historique de configuration",
       empty: "Aucun historique",
@@ -558,6 +618,24 @@ export const frenchCrmMessages = {
           update: "Alerte mise à jour",
           delete: "Alerte supprimée",
           view: "Alerte consultée",
+        },
+        activity_events: {
+          create: "Activité enregistrée",
+          update: "Activité modifiée",
+          delete: "Activité supprimée",
+          view: "Activité consultée",
+        },
+        case_notes: {
+          create: "Note de suivi ajoutée",
+          update: "Note de suivi modifiée",
+          delete: "Note de suivi supprimée",
+          view: "Note de suivi consultée",
+        },
+        case_actions: {
+          create: "Action ajoutée",
+          update: "Action mise à jour",
+          delete: "Action supprimée",
+          view: "Action consultée",
         },
       },
     },

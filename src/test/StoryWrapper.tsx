@@ -8,6 +8,8 @@ import { createDataProvider } from "@/components/atomic-crm/providers/fakerest";
 import { DEFAULT_USER } from "@/components/atomic-crm/providers/fakerest/authProvider";
 import type { Db } from "@/components/atomic-crm/providers/fakerest/dataGenerator/types";
 import type {
+  CaseAction,
+  CaseNote,
   Escalation,
   Sale,
   ServiceUser,
@@ -50,6 +52,8 @@ export const createCrmDb = (overrides: Partial<Db> = {}): Db =>
     support_profiles: [],
     escalations: [],
     activity_events: [],
+    case_notes: [],
+    case_actions: [],
     ...overrides,
   }) as Db;
 
@@ -91,6 +95,30 @@ export const buildEscalation = (
   acknowledged_at: null,
   resolved_at: null,
   notes: "Message mentioned feeling unsafe at night.",
+  ...overrides,
+});
+
+export const buildCaseNote = (overrides: Partial<CaseNote> = {}): CaseNote => ({
+  id: 1,
+  service_user_id: 1,
+  author_sales_id: 0,
+  body: "Talked through the housing appointment on Thursday.",
+  created_at: "2026-10-21T09:00:00.000Z",
+  updated_at: "2026-10-21T09:00:00.000Z",
+  ...overrides,
+});
+
+export const buildCaseAction = (
+  overrides: Partial<CaseAction> = {},
+): CaseAction => ({
+  id: 1,
+  service_user_id: 1,
+  title: "Book GP registration",
+  due_date: "2026-10-24",
+  assigned_to: 0,
+  done_at: null,
+  created_by: 0,
+  created_at: "2026-10-21T09:00:00.000Z",
   ...overrides,
 });
 

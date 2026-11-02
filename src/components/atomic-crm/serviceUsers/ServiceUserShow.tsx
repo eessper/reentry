@@ -5,7 +5,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIsMobile } from "@/hooks/use-mobile";
 
+import { CaseActions } from "../caseNotes/CaseActions";
+import { CaseNotes } from "../caseNotes/CaseNotes";
 import { ActivityFeed } from "../controlTower/ActivityFeed";
+import { ConversationPreview } from "../conversation/ConversationPreview";
 import { EscalationsForServiceUser } from "../escalations/EscalationsForServiceUser";
 import { MobileBackButton } from "../misc/MobileBackButton";
 import { MobileContent } from "../layout/MobileContent";
@@ -42,8 +45,11 @@ const ServiceUserShowContent = () => {
           <ProfileConfiguration />
           <ServiceUserDetails />
           <EscalationsForServiceUser serviceUserId={record.id} />
+          <CaseActions serviceUserId={record.id} />
+          <CaseNotes serviceUserId={record.id} />
         </div>
         <div className="lg:col-span-5 flex flex-col gap-4">
+          <ConversationPreview />
           <AuditTrail isReady={isViewLogged} />
           <ActivityFeed serviceUserId={record.id} limit={10} />
         </div>

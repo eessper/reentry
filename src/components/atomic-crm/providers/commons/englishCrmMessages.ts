@@ -141,6 +141,40 @@ export const englishCrmMessages = {
       },
       empty: "No activity yet",
     },
+    case_notes: {
+      name: "Case note |||| Case notes",
+      fields: {
+        body: "Note",
+        author_sales_id: "Author",
+      },
+      new: "New case note",
+      placeholder: "What happened, what was agreed, how they seemed",
+      add: "Add note",
+      empty: "No case notes yet",
+      system: "System",
+      notifications: {
+        created: "Case note added",
+      },
+    },
+    case_actions: {
+      name: "Action |||| Actions",
+      fields: {
+        title: "Action",
+        due_date: "Due",
+        assigned_to: "Assigned to",
+        done_at: "Done",
+      },
+      new: "New action",
+      placeholder: "e.g. Book GP registration",
+      add: "Add action",
+      empty: "No open actions",
+      recently_done: "Recently done",
+      due: "Due %{date}",
+      overdue: "Overdue since %{date}",
+      notifications: {
+        created: "Action added",
+      },
+    },
     companies: {
       name: "Company |||| Companies",
       forcedCaseName: "Company",
@@ -529,6 +563,30 @@ export const englishCrmMessages = {
         "Your role shows aggregated figures only. Individual records are hidden.",
       error: "The Control Tower figures could not be loaded.",
     },
+    demo: {
+      switch_title: "Switch demo user",
+      viewing_as: "Viewing as %{name} (%{role})",
+    },
+    conversation: {
+      title: "WhatsApp preview",
+      simulated: "Simulated",
+      reset: "Start the conversation again",
+      placeholder: "Type as %{name} would…",
+      message_label: "Message from the service user",
+      send: "Send",
+      paused:
+        "AI replies are paused: an escalation is open for this person. They resume when staff resolve it.",
+      simulate_no_reply: "Simulate: nobody acknowledges within 15 minutes",
+      disclaimer:
+        "Simulation for demos and training. Nothing is sent to WhatsApp and the messages are not saved; the escalations and activity it creates are real records.",
+      system: {
+        escalation_opened:
+          "Risk screen matched: escalation opened, AI replies paused",
+        assistant_paused: "AI replies paused while the escalation is open",
+        no_staff_reply:
+          "15 minutes later, still not acknowledged: crisis contacts sent",
+      },
+    },
     audit_trail: {
       title: "Configuration audit trail",
       empty: "No history yet",
@@ -553,6 +611,24 @@ export const englishCrmMessages = {
           update: "Escalation updated",
           delete: "Escalation deleted",
           view: "Escalation opened for viewing",
+        },
+        activity_events: {
+          create: "Activity recorded",
+          update: "Activity changed",
+          delete: "Activity removed",
+          view: "Activity opened",
+        },
+        case_notes: {
+          create: "Case note added",
+          update: "Case note edited",
+          delete: "Case note deleted",
+          view: "Case note opened",
+        },
+        case_actions: {
+          create: "Action added",
+          update: "Action updated",
+          delete: "Action deleted",
+          view: "Action opened",
         },
       },
     },

@@ -2,10 +2,11 @@ import faker from "faker/locale/en";
 
 import type {
   ActivityEvent,
+  CaseAction,
+  CaseNote,
   Escalation,
   RiskTier,
   ServiceUser,
-  Stability,
   SupportProfile,
 } from "../../../types";
 import {
@@ -14,19 +15,21 @@ import {
   RISK_PATHWAYS,
   RISK_TIERS,
 } from "../../../types";
+import { demoStability } from "../internal/demoStability";
 import type { Db } from "./types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const stabilityOf = (tier: RiskTier, escalations: Escalation[]): Stability => {
-  const open = escalations.filter(
-    (escalation) => escalation.status !== "resolved",
-  );
-  if (open.some((e) => e.severity === "high" || e.severity === "critical")) {
-    return "critical";
-  }
-  return open.length > 0 || tier === "high" ? "watch" : "stable";
-};
+const NOTE_SCRIPT = [
+  "Met at the hostel. Settling in, worried about money until the first Universal Credit payment.",
+  "Phone call. Went to the GP registration on their own, mood better than last week.",
+];
+
+const ACTION_SCRIPT = [
+  "Chase Universal Credit advance",
+  "Book GP registration",
+  "Confirm probation appointment and travel",
+];
 
 /**
  * Demo-mode service users, shaped like rows of the service_users_summary
@@ -39,6 +42,8 @@ export const generateServiceUsers = (db: Db) => {
   const profiles: SupportProfile[] = [];
   const escalations: Escalation[] = [];
   const events: ActivityEvent[] = [];
+  const notes: CaseNote[] = [];
+  const actions: CaseAction[] = [];
 
   for (let id = 1; id <= 15; id++) {
     const daysSinceRelease =
@@ -82,7 +87,8 @@ export const generateServiceUsers = (db: Db) => {
       consent_status: "given",
       status: "active",
       nb_open_escalations: ownEscalations.length,
-      stability: stabilityOf(risk_tier, ownEscalations),
+      // Recomputed on every read by the demo provider
+      stability: demoStability({ id, risk_tier }, ownEscalations, []),
       last_checkin_at: new Date(Date.now() - (id % 3) * DAY_MS).toISOString(),
       created_at: new Date(
         Date.now() - daysSinceRelease * DAY_MS,
@@ -109,11 +115,14 @@ export const generateServiceUsers = (db: Db) => {
       daysAgo < Math.min(7, daysSinceRelease + 1);
       daysAgo++
     ) {
+      const isMissed = faker.datatype.number({ min: 1, max: 10 }) <= 2;
       events.push({
         id: events.length + 1,
         service_user_id: id,
-        type: "checkin",
-        summary: `Check-in completed, mood ${faker.datatype.number({ min: 3, max: 9 })}/10`,
+        type: isMissed ? "missed_checkin" : "checkin",
+        summary: isMissed
+          ? "Missed the morning check-in"
+          : `Check-in completed, mood ${faker.datatype.number({ min: 3, max: 9 })}/10`,
         actor_sales_id: null,
         created_at: new Date(
           Date.now() - daysAgo * DAY_MS - 3 * 60 * 60 * 1000,
@@ -122,5 +131,40 @@ export const generateServiceUsers = (db: Db) => {
     }
   }
 
-  return { serviceUsers, profiles, escalations, events };
+  for (const serviceUser of serviceUsers.slice(0, 8)) {
+    const author = serviceUser.assigned_worker_id;
+    NOTE_SCRIPT.slice(0, 1 + (Number(serviceUser.id) % 2)).forEach(
+      (body, index) => {
+        const createdAt = new Date(
+          Date.now() - (index + 1) * DAY_MS,
+        ).toISOString();
+        notes.push({
+          id: notes.length + 1,
+          service_user_id: serviceUser.id,
+          author_sales_id: author,
+          body,
+          created_at: createdAt,
+          updated_at: createdAt,
+        });
+      },
+    );
+    ACTION_SCRIPT.slice(0, 1 + (Number(serviceUser.id) % 3)).forEach(
+      (title, index) => {
+        actions.push({
+          id: actions.length + 1,
+          service_user_id: serviceUser.id,
+          title,
+          due_date: new Date(Date.now() + (index * 2 - 1) * DAY_MS)
+            .toISOString()
+            .slice(0, 10),
+          assigned_to: author,
+          done_at: null,
+          created_by: author,
+          created_at: new Date(Date.now() - 2 * DAY_MS).toISOString(),
+        });
+      },
+    );
+  }
+
+  return { serviceUsers, profiles, escalations, events, notes, actions };
 };
