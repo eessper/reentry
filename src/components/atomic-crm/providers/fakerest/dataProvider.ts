@@ -306,6 +306,25 @@ export const createDataProvider = ({
       },
       // Mirror the database defaults and triggers that stamp who did what, and when
       {
+        // version_support_profile(): every save is a new version
+        resource: "support_profiles",
+        beforeUpdate: async (params) => {
+          const { data: current } = await rawDataProvider.getOne(
+            "support_profiles",
+            { id: params.id },
+          );
+          return {
+            ...params,
+            data: {
+              ...params.data,
+              version: current.version + 1,
+              updated_at: new Date().toISOString(),
+              updated_by: (await getIdentity())?.id ?? null,
+            },
+          };
+        },
+      },
+      {
         resource: "escalations",
         beforeCreate: async (params) => ({
           ...params,
