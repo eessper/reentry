@@ -1,4 +1,11 @@
-import { escalationNote, moodScore, openingMessage, replyTo } from "./replies";
+// @vitest-environment node
+import { describe, expect, it } from "vitest";
+import {
+  escalationNote,
+  moodScore,
+  openingMessage,
+  replyTo,
+} from "./replies.ts";
 
 describe("moodScore", () => {
   it("reads a bare number or 'mood N' as a check-in score", () => {

@@ -1,9 +1,10 @@
-import type { EscalationSeverity } from "../types";
+import type { EscalationSeverity } from "./types.ts";
 
 /**
  * The deterministic risk screen every incoming message goes through before
- * anything else (no AI). Phase 2 runs the same rules in the WhatsApp engine;
- * the Control Tower preview runs them in the browser.
+ * anything else (no AI). Shared by the Control Tower's WhatsApp preview (in
+ * the browser) and the Phase 2 WhatsApp engine (edge functions), so both run
+ * exactly the same rules. Keep it free of side effects and dependencies.
  *
  * Each rule has a minimum keyword sensitivity (the profile's 1-10 setting):
  * the most serious rules always apply, milder ones only for people whose

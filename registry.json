@@ -382,11 +382,7 @@
           "type": "registry:component"
         },
         {
-          "path": "src/components/atomic-crm/conversation/riskScreen.ts",
-          "type": "registry:component"
-        },
-        {
-          "path": "src/components/atomic-crm/conversation/replies.ts",
+          "path": "src/components/atomic-crm/conversation/sharedTypes.check.ts",
           "type": "registry:component"
         },
         {
