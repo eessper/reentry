@@ -111,7 +111,6 @@ export const SettingsPageMobile = () => {
           <div className="space-y-6">
             <ProfileSection />
             <PreferencesSection />
-            <InboundEmailSection />
             <McpServerSection />
             <AboutSection />
           </div>
@@ -524,27 +523,6 @@ const ThemeRow = () => {
         </ToggleGroupItem>
       </ToggleGroup>
     </Item>
-  );
-};
-
-const InboundEmailSection = () => {
-  const translate = useTranslate();
-
-  if (!import.meta.env.VITE_INBOUND_EMAIL) return null;
-
-  return (
-    <div>
-      <SectionLabel>{translate("crm.profile.inbound.title")}</SectionLabel>
-      <p className="text-sm text-muted-foreground mb-2 px-1">
-        {translate("crm.profile.inbound.description", {
-          _: "You can start sending emails to your server's inbound email address, e.g. by adding it to the Cc: field. Atomic CRM will process the emails and add notes to the corresponding contacts.",
-          field: "Cc:",
-        })}
-      </p>
-      <ItemGroup className="rounded-lg border overflow-hidden">
-        <CopyPasteRow value={import.meta.env.VITE_INBOUND_EMAIL} />
-      </ItemGroup>
-    </div>
   );
 };
 

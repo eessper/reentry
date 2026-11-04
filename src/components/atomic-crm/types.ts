@@ -16,6 +16,20 @@ export type SignUpData = {
   last_name: string;
 };
 
+/** A staff member's role in their organisation (memberships.role). */
+export type MembershipRole =
+  | "org_admin"
+  | "clinical_lead"
+  | "key_worker"
+  | "viewer";
+
+export const MEMBERSHIP_ROLES: readonly MembershipRole[] = [
+  "org_admin",
+  "clinical_lead",
+  "key_worker",
+  "viewer",
+];
+
 export type SalesFormData = {
   avatar?: string;
   email: string;
@@ -23,14 +37,14 @@ export type SalesFormData = {
   password?: string;
   first_name: string;
   last_name: string;
-  administrator: boolean;
+  role: MembershipRole;
   disabled: boolean;
 };
 
 export type Sale = {
   first_name: string;
   last_name: string;
-  administrator: boolean;
+  role: MembershipRole;
   avatar?: RAFile;
   disabled?: boolean;
   user_id: string;

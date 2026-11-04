@@ -96,7 +96,6 @@ create table public.sales (
     first_name text not null default 'Pending'::text,
     last_name text not null default 'Pending'::text,
     email extensions.citext not null,
-    administrator boolean not null,
     user_id uuid not null,
     avatar jsonb,
     disabled boolean not null default false,

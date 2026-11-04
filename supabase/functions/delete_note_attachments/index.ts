@@ -5,151 +5,68 @@ import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 const ATTACHMENTS_BUCKET =
   Deno.env.get("VITE_ATTACHMENTS_BUCKET") || "attachments";
 
-type NoteAttachment = {
-  path?: string | null;
-  src?: string | null;
-};
+// Storage accepts up to 1000 paths per remove call.
+const BATCH_SIZE = 1000;
 
-type NoteRecord = {
-  id?: number | string | null;
-  attachments?: NoteAttachment[] | null;
-};
+/**
+ * Deletes the files waiting in `storage_deletion_queue`.
+ *
+ * The queue is filled only by the `cleanup_note_attachments` database
+ * trigger, which queues a file once no note uses it any more and only when it
+ * sits in the note's own organisation folder. This function never takes paths
+ * from the request: any signed-in user can wake it up, but it can only delete
+ * files the database has already decided are orphaned.
+ */
+const drainDeletionQueue = async () => {
+  const { data: queued, error: readError } = await supabaseAdmin
+    .from("storage_deletion_queue")
+    .select("path")
+    .order("queued_at")
+    .limit(BATCH_SIZE);
 
-type WebhookPayload = {
-  type?: string | null;
-  old_record?: NoteRecord | null;
-  record?: NoteRecord | null;
-};
-
-const deleteNoteAttachments = async (req: Request) => {
-  if (req.method !== "POST") {
-    return jsonResponse({ error: "Method Not Allowed" }, 405);
+  if (readError) {
+    console.error("Failed to read the storage deletion queue", readError);
+    return jsonResponse({ error: "Failed to delete note attachments" }, 500);
   }
 
-  const payload = (await req.json()) as WebhookPayload;
-  const paths = getPathsToDelete(payload);
-
+  const paths = (queued ?? []).map(({ path }: { path: string }) => path);
   if (paths.length === 0) {
-    return jsonResponse({
-      status: "skipped",
-      reason: "no_paths_to_delete",
-    });
+    return jsonResponse({ status: "skipped", reason: "no_paths_to_delete" });
   }
 
-  const { error } = await supabaseAdmin.storage
+  const { error: removeError } = await supabaseAdmin.storage
     .from(ATTACHMENTS_BUCKET)
     .remove(paths);
 
-  if (error) {
+  if (removeError) {
     console.error("Failed to delete note attachments", {
-      type: payload.type ?? null,
       paths,
-      error,
+      error: removeError,
     });
     return jsonResponse({ error: "Failed to delete note attachments" }, 500);
   }
 
-  return jsonResponse({
-    status: "ok",
-  });
+  const { error: dequeueError } = await supabaseAdmin
+    .from("storage_deletion_queue")
+    .delete()
+    .in("path", paths);
+
+  if (dequeueError) {
+    // The files are gone; leaving them queued only means a harmless retry.
+    console.error("Failed to dequeue deleted attachments", dequeueError);
+  }
+
+  return jsonResponse({ status: "ok", deleted: paths.length });
 };
 
 Deno.serve(async (req: Request) =>
-  AuthMiddleware(req, async (req: Request) => deleteNoteAttachments(req)),
+  AuthMiddleware(req, async (req: Request) => {
+    if (req.method !== "POST") {
+      return jsonResponse({ error: "Method Not Allowed" }, 405);
+    }
+    return drainDeletionQueue();
+  }),
 );
-
-const getPathsToDelete = (payload: WebhookPayload): string[] => {
-  const oldPaths = extractAttachmentPaths(payload.old_record?.attachments);
-  const newPaths = extractAttachmentPaths(payload.record?.attachments);
-
-  if (payload.type === "UPDATE") {
-    const newPathsSet = new Set(newPaths);
-    return oldPaths.filter((path) => !newPathsSet.has(path));
-  }
-
-  if (payload.type === "DELETE") {
-    return oldPaths;
-  }
-
-  return [];
-};
-
-const extractAttachmentPaths = (
-  attachments?: NoteAttachment[] | null,
-): string[] => {
-  const paths = attachments
-    ?.map((attachment) => extractAttachmentPath(attachment))
-    .filter((path): path is string => path != null && path.length > 0);
-
-  return paths ? Array.from(new Set(paths)) : [];
-};
-
-const extractAttachmentPath = (attachment?: NoteAttachment | null) => {
-  if (!attachment) {
-    return null;
-  }
-
-  if (attachment.path) {
-    return normalizeStoragePath(attachment.path);
-  }
-
-  if (!attachment.src) {
-    return null;
-  }
-
-  const pathname = getPathname(attachment.src);
-  if (!pathname) {
-    return null;
-  }
-
-  const bucketSegment = `/${ATTACHMENTS_BUCKET}/`;
-  const bucketIndex = pathname.lastIndexOf(bucketSegment);
-  if (bucketIndex < 0) {
-    return null;
-  }
-
-  const path = pathname.slice(bucketIndex + bucketSegment.length);
-  return normalizeStoragePath(path);
-};
-
-const getPathname = (value: string) => {
-  try {
-    return new URL(value, "http://localhost").pathname;
-  } catch {
-    return null;
-  }
-};
-
-const safelyDecodePath = (path: string) => {
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    return path;
-  }
-};
-
-const normalizeStoragePath = (path: string) => {
-  const trimmedPath = path.trim();
-  if (trimmedPath.length === 0) {
-    return null;
-  }
-
-  const parsedPath = getPathname(trimmedPath);
-  const candidatePath = parsedPath ?? trimmedPath;
-
-  const bucketSegment = `/${ATTACHMENTS_BUCKET}/`;
-  const bucketIndex = candidatePath.lastIndexOf(bucketSegment);
-  const withoutBucket =
-    bucketIndex >= 0
-      ? candidatePath.slice(bucketIndex + bucketSegment.length)
-      : candidatePath.replace(/^\/+/, "").replace(/^attachments\//, "");
-
-  if (withoutBucket.length === 0) {
-    return null;
-  }
-
-  return safelyDecodePath(withoutBucket);
-};
 
 const jsonResponse = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {

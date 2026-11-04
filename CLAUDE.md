@@ -2,22 +2,33 @@
 
 # Re-entry project notes (read first)
 
-This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHASE1_BRIEF.md` (what we're building, the session plan) and `docs/ARCHITECTURE.md` (how the code maps to it, and the open security findings F1–F10). Phase 1 uses **synthetic data only**.
+This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHASE1_BRIEF.md` (what we're building, the session plan) and `docs/ARCHITECTURE.md` (how the code maps to it, and the security findings F1–F10 with the session that fixes each). Phase 1 uses **synthetic data only**.
 
 ## Tenancy (Session 1, done)
 
 - Every tenant table has `organisation_id uuid not null default private.current_organisation_id()` and one RLS policy: `organisation_id = (select private.current_organisation_id())`. **Any new tenant table must follow the same pattern**, plus a `unique (id, organisation_id)` key and composite foreign keys `(parent_id, organisation_id)` for references to other tenant rows.
 - Add each new tenant table to `supabase/tests/tenancy_isolation.test.sql` (one `pg_temp.check_isolation(...)` call) and bump `plan(...)`.
-- One organisation per user (`memberships.user_id` is unique). Roles live in `memberships.role`; `sales.administrator` is a legacy mirror kept in sync by a trigger until Session 2 removes it.
+- One organisation per user (`memberships.user_id` is unique).
 - Accounts are only created with `app_metadata.organisation_id` (service role). Open self-signup is rejected by the deferred `on_auth_user_created` constraint trigger. Create an organisation and its first admin with:
   `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/create-organisation.mjs --name "<org>" --email <admin> [--password <pw>]`
 - Edge functions use the service role and **bypass RLS**: any new function must check the caller's organisation itself (see `supabase/functions/users/permissions.ts`).
+
+## Roles, audit log and attachments (Session 2, done)
+
+- **Roles live only in `memberships.role`** (`sales.administrator` is gone). The frontend reads them through the `sales_summary` view; only the `users` edge function (service role) changes them, and only for an org admin acting on someone else.
+- Role rules are enforced in RLS with the helpers in `supabase/schemas/02_roles.sql` (`private.current_sales_id()`, `private.sees_all_records()`, `private.is_case_staff()`, `private.can_access_assigned(org, sales_id)`):
+  - org_admin and clinical_lead see every record in their organisation; key_worker sees only rows whose `sales_id` is theirs; viewer sees no individual records.
+  - Assignable tables (`contacts`, `deals`) inline the assignment rule in their policies (so each helper runs once per query). Child tables (`contact_notes`, `tasks`, `deal_notes`) use `exists (select 1 from <parent> where id = <parent_id>)`, which runs under the parent's policy. **New tables in Session 3 should copy these two patterns** (`service_users` like `contacts`; profiles, escalations and activity events like `contact_notes`), and get cases in `supabase/tests/roles_permissions.test.sql`.
+- **Audit log** (`supabase/schemas/09_audit.sql`): every tenant table has an `audit_row_change` trigger. Add one to each new tenant table and a `pg_temp.check_audit(...)` call to `supabase/tests/audit_log.test.sql`. Views are logged with `public.log_record_view(table_name, record_id)`, which only accepts `contacts` for now: add `service_users` and `support_profiles` in Session 3. The UI calls it through `dataProvider.logRecordView` (see `useLogRecordView`). Nobody can update, delete or truncate `audit_log`, not even the service role or the owner (triggers).
+- **Attachments** are private. Paths are `<organisation_id>/notes/<uuid>` (note attachments, readable like the note) or `<organisation_id>/shared/<uuid>` (logos, avatars, readable by the organisation). The frontend uploads and signs URLs through `src/components/atomic-crm/providers/supabase/attachmentStorage.ts`; never store or render a public URL. Orphaned note files are queued by the `cleanup_note_attachments` trigger in `storage_deletion_queue` and deleted by the `delete_note_attachments` function, which takes no paths from the request.
+- The `postmark` inbound-email function was removed (it sent data to a US service and couldn't be tenant-scoped). Don't bring back third-party services without checking the UK/EU residency rule in the brief.
 
 ## Database workflow in cloud sessions
 
 - Docker may not be running: start it with `dockerd` as a background command, then `npx supabase start`.
 - `npx supabase db diff` (migra) can't reach npm from inside its container here. Hand-write migrations, then confirm they match `supabase/schemas/` with `npx supabase db diff --local --use-pg-schema`. That engine always reports a spurious `DROP EXTENSION "pgjwt"` and some pre-existing grant differences; nothing else should appear.
-- Run database tests with `make test-db`; frontend and function tests with `make test`.
+- Write the declarative schema first, then the migration. Session 2's migration was assembled from the schema files' text so function bodies match `pg_dump` exactly; copy blocks the same way rather than retyping them.
+- Run database tests with `make test-db` (tenancy, roles, audit, storage suites); frontend and function tests with `make test`.
 
 # Agent Workflow
 

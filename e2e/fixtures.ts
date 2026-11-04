@@ -85,13 +85,13 @@ async function createSales({
   last_name,
   email,
   password,
-  administrator = false,
+  role = "key_worker",
 }: {
   first_name: string;
   last_name: string;
   email: string;
   password: string;
-  administrator?: boolean;
+  role?: "org_admin" | "clinical_lead" | "key_worker" | "viewer";
 }) {
   const { data: userData, error: userError } =
     await adminSupabase.auth.admin.createUser({
@@ -103,7 +103,7 @@ async function createSales({
       user_metadata: { first_name, last_name },
       app_metadata: {
         organisation_id: await getOrganisationId(),
-        role: administrator ? "org_admin" : "key_worker",
+        role,
       },
     });
 
@@ -113,7 +113,7 @@ async function createSales({
 
   const { data, error } = await adminSupabase
     .from("sales")
-    .update({ first_name, last_name, administrator })
+    .update({ first_name, last_name })
     .eq("user_id", userData.user?.id)
     .select()
     .single();

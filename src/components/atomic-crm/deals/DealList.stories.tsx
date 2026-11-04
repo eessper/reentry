@@ -26,9 +26,9 @@ const dataForAccountManagerFilter = {
     buildDeal({ id: 2, index: 1, name: "Marie deal", sales_id: 1 }),
   ],
   sales: [
-    buildSale({ administrator: true, first_name: "Jane", id: 0 }),
+    buildSale({ role: "org_admin", first_name: "Jane", id: 0 }),
     buildSale({
-      administrator: false,
+      role: "key_worker",
       email: "mariecurie@atomic.dev",
       first_name: "Marie",
       id: 1,

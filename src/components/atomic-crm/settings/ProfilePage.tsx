@@ -236,24 +236,6 @@ const ProfileForm = ({
           </div>
         </CardContent>
       </Card>
-      {import.meta.env.VITE_INBOUND_EMAIL && (
-        <Card>
-          <CardContent>
-            <div className="space-y-4 justify-between">
-              <h2 className="text-xl font-semibold text-muted-foreground">
-                {translate("crm.profile.inbound.title")}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {translate("crm.profile.inbound.description", {
-                  _: "You can start sending emails to your server's inbound email address, e.g. by adding it to the Cc: field. Atomic CRM will process the emails and add notes to the corresponding contacts.",
-                  field: "Cc:",
-                })}
-              </p>
-              <CopyPaste value={import.meta.env.VITE_INBOUND_EMAIL} />
-            </div>
-          </CardContent>
-        </Card>
-      )}
       <Card>
         <CardContent>
           <div className="space-y-4 justify-between">

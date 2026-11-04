@@ -3,7 +3,7 @@ import { expect, test } from "./fixtures";
 test.describe("admin filtering by account manager", () => {
   test.beforeEach(async ({ createSales, createCompany, createContact }) => {
     const admin = await createSales({
-      administrator: true,
+      role: "org_admin",
       email: "john@doe.com",
       first_name: "John",
       last_name: "Doe",
@@ -88,6 +88,8 @@ test.describe("admin filtering by account manager", () => {
 
     await menu.goToContacts();
     await expect(page.getByText("Grace Hopper")).toBeVisible();
+    // Key workers only see the contacts assigned to them
+    await expect(page.getByText("Ada Lovelace")).toBeHidden();
 
     if (isMobile) {
       await page.getByRole("button", { name: "Add filter" }).click();

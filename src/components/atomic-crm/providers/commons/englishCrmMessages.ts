@@ -283,8 +283,14 @@ export const englishCrmMessages = {
         email: "Email",
         secondary_email: "Secondary email",
         secondary_emails: "Secondary emails",
-        administrator: "Admin",
+        role: "Role",
         disabled: "Disabled",
+      },
+      roles: {
+        org_admin: "Organisation admin",
+        clinical_lead: "Clinical lead",
+        key_worker: "Key worker",
+        viewer: "Viewer",
       },
       create: {
         error: "An error occurred while creating the user.",
@@ -570,11 +576,6 @@ export const englishCrmMessages = {
         "You cannot add more than 10 secondary email addresses",
       secondary_emails_help:
         "Other addresses you send emails from. Leave one empty to remove it.",
-      inbound: {
-        description:
-          "You can start sending emails to your server's inbound email address, e.g. by adding it to the %{field} field. Atomic CRM will process the emails and add notes to the corresponding contacts.",
-        title: "Inbound email",
-      },
       mcp: {
         title: "MCP Server",
         description:

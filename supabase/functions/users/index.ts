@@ -4,7 +4,14 @@ import { corsHeaders, OptionsMiddleware } from "../_shared/cors.ts";
 import { createErrorResponse } from "../_shared/utils.ts";
 import { AuthMiddleware, UserMiddleware } from "../_shared/authentication.ts";
 import { getUserSale } from "../_shared/getUserSale.ts";
-import { canEditProfile, isVisibleTo } from "./permissions.ts";
+import {
+  canChangeRole,
+  canEditProfile,
+  isOrgAdmin,
+  isVisibleTo,
+  parseRole,
+  type MembershipRole,
+} from "./permissions.ts";
 import {
   findInvalidEmail,
   MAX_SECONDARY_EMAILS,
@@ -18,21 +25,31 @@ async function updateSaleDisabled(user_id: string, disabled: boolean) {
     .eq("user_id", user_id);
 }
 
-async function updateSaleAdministrator(
-  user_id: string,
-  administrator: boolean,
-) {
-  const { data: sales, error: salesError } = await supabaseAdmin
-    .from("sales")
-    .update({ administrator })
-    .eq("user_id", user_id)
-    .select("*");
+// memberships.role is the only source of a user's role.
+async function updateMembershipRole(user_id: string, role: MembershipRole) {
+  const { error } = await supabaseAdmin
+    .from("memberships")
+    .update({ role })
+    .eq("user_id", user_id);
 
-  if (!sales?.length || salesError) {
-    console.error("Error updating user:", salesError);
-    throw salesError ?? new Error("Failed to update sale");
+  if (error) {
+    console.error("Error updating role:", error);
+    throw error;
   }
-  return sales.at(0);
+}
+
+async function getSaleWithRole(user_id: string) {
+  const { data: sale, error } = await supabaseAdmin
+    .from("sales_summary")
+    .select("*")
+    .eq("user_id", user_id)
+    .single();
+
+  if (!sale || error) {
+    console.error("Error reading user:", error);
+    throw error ?? new Error("Failed to read sale");
+  }
+  return sale;
 }
 
 async function findEmailUsedByAnotherSale(
@@ -105,11 +122,18 @@ async function updateSaleAvatar(user_id: string, avatar: string) {
 }
 
 async function inviteUser(req: Request, currentUserSale: any) {
-  const { email, password, first_name, last_name, disabled, administrator } =
+  const { email, password, first_name, last_name, disabled, role } =
     await req.json();
 
-  if (!currentUserSale.administrator) {
+  if (!isOrgAdmin(currentUserSale)) {
     return createErrorResponse(401, "Not Authorized");
+  }
+
+  const newRole = role === undefined ? "key_worker" : parseRole(role);
+  if (!newRole) {
+    return createErrorResponse(400, `Unknown role: ${role}`, {
+      code: "invalid_role",
+    });
   }
 
   const takenEmail = await findEmailUsedByAnotherSale(
@@ -132,7 +156,7 @@ async function inviteUser(req: Request, currentUserSale: any) {
     user_metadata: { first_name, last_name },
     app_metadata: {
       organisation_id: currentUserSale.organisation_id,
-      role: administrator ? "org_admin" : "key_worker",
+      role: newRole,
     },
   });
 
@@ -165,7 +189,7 @@ async function inviteUser(req: Request, currentUserSale: any) {
 
   try {
     await updateSaleDisabled(user.id, disabled);
-    const sale = await updateSaleAdministrator(user.id, administrator);
+    const sale = await getSaleWithRole(user.id);
 
     return new Response(
       JSON.stringify({
@@ -189,11 +213,11 @@ async function patchUser(req: Request, currentUserSale: any) {
     first_name,
     last_name,
     avatar,
-    administrator,
+    role,
     disabled,
   } = await req.json();
   const { data: sale } = await supabaseAdmin
-    .from("sales")
+    .from("sales_summary")
     .select("*")
     .eq("id", sales_id)
     .single();
@@ -207,6 +231,19 @@ async function patchUser(req: Request, currentUserSale: any) {
   // Users can only update their own profile unless they are an administrator
   if (!canEditProfile(currentUserSale, sale)) {
     return createErrorResponse(401, "Not Authorized");
+  }
+
+  const newRole = role === undefined ? undefined : parseRole(role);
+  if (role !== undefined && !newRole) {
+    return createErrorResponse(400, `Unknown role: ${role}`, {
+      code: "invalid_role",
+    });
+  }
+  const isRoleChange = newRole !== undefined && newRole !== sale.role;
+  if (isRoleChange && !canChangeRole(currentUserSale, sale)) {
+    return createErrorResponse(403, "You can't change this user's role", {
+      code: "role_change_forbidden",
+    });
   }
 
   if (email && email.trim().toLowerCase() !== sale.email.toLowerCase()) {
@@ -300,13 +337,9 @@ async function patchUser(req: Request, currentUserSale: any) {
     return createErrorResponse(500, "Internal Server Error");
   }
 
-  // Only administrators can update the administrator and disabled status
-  if (!currentUserSale.administrator) {
-    const { data: new_sale } = await supabaseAdmin
-      .from("sales")
-      .select("*")
-      .eq("id", sales_id)
-      .single();
+  // Only administrators can update the role and disabled status
+  if (!isOrgAdmin(currentUserSale)) {
+    const new_sale = await getSaleWithRole(data.user.id);
     return new Response(
       JSON.stringify({
         data: new_sale,
@@ -322,7 +355,10 @@ async function patchUser(req: Request, currentUserSale: any) {
 
   try {
     await updateSaleDisabled(data.user.id, disabled);
-    const sale = await updateSaleAdministrator(data.user.id, administrator);
+    if (isRoleChange && newRole) {
+      await updateMembershipRole(data.user.id, newRole);
+    }
+    const sale = await getSaleWithRole(data.user.id);
     return new Response(
       JSON.stringify({
         data: sale,
