@@ -355,6 +355,17 @@ const buildActivity = (random, organisation, serviceUser, profile) => {
   return events;
 };
 
+const CASE_NOTES = [
+  "Met at the hostel. Settling in, worried about money until the first Universal Credit payment.",
+  "Phone call. Went to the GP registration on their own, mood better than last week.",
+];
+
+const CASE_ACTIONS = [
+  "Chase Universal Credit advance",
+  "Book GP registration",
+  "Confirm probation appointment and travel",
+];
+
 const seedOrganisation = async (definition) => {
   const random = createRandom(definition.seed);
   const organisation = check(
@@ -452,12 +463,46 @@ const seedOrganisation = async (definition) => {
     "create activity events",
   );
 
+  // Case notes and open actions for the first few people, written by their
+  // key worker (inserted with the service role, so the author is kept).
+  const notes = [];
+  const actions = [];
+  serviceUsers.slice(0, 8).forEach((serviceUser, index) => {
+    CASE_NOTES.slice(0, 1 + (index % 2)).forEach((body, noteIndex) => {
+      notes.push({
+        organisation_id: organisation.id,
+        service_user_id: serviceUser.id,
+        author_sales_id: serviceUser.assigned_worker_id,
+        body,
+        created_at: at(noteIndex + 1, 16),
+        updated_at: at(noteIndex + 1, 16),
+      });
+    });
+    CASE_ACTIONS.slice(0, 1 + (index % 3)).forEach((title, actionIndex) => {
+      actions.push({
+        organisation_id: organisation.id,
+        service_user_id: serviceUser.id,
+        title,
+        due_date: at(1 - actionIndex * 2, 12).slice(0, 10),
+        assigned_to: serviceUser.assigned_worker_id,
+        created_by: serviceUser.assigned_worker_id,
+      });
+    });
+  });
+  check(await supabase.from("case_notes").insert(notes), "create case notes");
+  check(
+    await supabase.from("case_actions").insert(actions),
+    "create case actions",
+  );
+
   return {
     organisation,
     staff,
     serviceUsers: serviceUsers.length,
     escalations: escalations.length,
     events: pastEvents.length,
+    notes: notes.length,
+    actions: actions.length,
   };
 };
 
@@ -477,7 +522,7 @@ if (existing?.length) {
 for (const definition of ORGANISATIONS) {
   const result = await seedOrganisation(definition);
   process.stdout.write(
-    `${result.organisation.name}: ${result.serviceUsers} service users, ${result.escalations} escalations, ${result.events} activity events\n` +
+    `${result.organisation.name}: ${result.serviceUsers} service users, ${result.escalations} escalations, ${result.events} activity events, ${result.notes} case notes, ${result.actions} actions\n` +
       Object.values(result.staff)
         .map((member) => `  ${member.title.padEnd(20)} ${member.email}\n`)
         .join(""),

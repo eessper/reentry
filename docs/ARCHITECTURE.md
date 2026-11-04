@@ -32,7 +32,7 @@ Atomic CRM is a **single-team** CRM. Every finding below is a problem for a mult
 | F4 | `configuration` is a single global row editable by any admin, so one organisation's admin would change settings for everyone. | High | **Session 1** (made per-organisation) |
 | F5 | Foreign keys don't check organisation, so a row could point at another organisation's record (for example a note attached to someone else's contact). | High | **Session 1** (composite foreign keys) |
 | F6 | The `attachments` storage bucket is **public**: anyone with a file's URL can download it without logging in, and any logged-in user can list every file. | Critical | **Session 2** (fixed: private bucket, organisation-scoped paths, signed URLs) |
-| F7 | Saving a contact sends a hash of their email to **gravatar.com** and their email domain to **favicon.show** (US services). That breaches the UK/EU residency rule. | High | **Session 4** removed every screen that writes contacts or companies; the triggers go when the CRM tables are dropped |
+| F7 | Saving a contact sends a hash of their email to **gravatar.com** and their email domain to **favicon.show** (US services). That breaches the UK/EU residency rule. | High | **Session 5** (fixed: the triggers were dropped with the CRM tables) |
 | F8 | `contacts.tags` and `deals.contact_ids` are arrays of ids with no foreign key, so they can hold ids from another organisation. RLS still hides the other organisation's rows, so nothing leaks, but the data is untidy. | Low | Goes with the CRM tables (next migration) |
 | F9 | The `delete_note_attachments` edge function accepts any signed-in user's token and deletes whatever storage paths it is given, in any organisation. | High | **Session 2** (fixed: it only drains a queue the database fills) |
 | F10 | The `postmark` inbound-email function writes contacts and notes with the service role. After Session 1 those writes fail (no organisation to stamp), so it fails closed; it must be removed or tenant-scoped before deployment. | Medium | **Session 2** (fixed: removed) |
@@ -141,8 +141,15 @@ All in `supabase/schemas/08_service_users.sql`, following the tenancy (section 3
 
 - **Status dots:** `service_user_stability()` gives critical (an unresolved high or critical escalation), watch (any other unresolved escalation, a missed check-in in the last 48 hours, or a high risk tier) or stable. The chart replays the same rule for each past day.
 - **Viewers** get the KPIs and chart and nothing else. Small organisations may still be able to infer individuals from aggregates; consider a minimum cohort size before real data arrives.
-- **The Atomic CRM frontend has been removed:** contacts, companies, deals, tasks, notes, tags, the CRM import, global search, `merge_contacts` and the MCP card. Its tables stay in the database until the next migration drops them (see `CLAUDE.md`).
+- **The Atomic CRM frontend has been removed:** contacts, companies, deals, tasks, notes, tags, the CRM import, global search, `merge_contacts` and the MCP card. Its tables were dropped in Session 5.
 - **Telemetry:** the app no longer pings the Atomic CRM authors' telemetry server.
+
+## 3e. Case work, WhatsApp preview and demo (Session 5)
+
+- **CRM tables retired** (migration `20261102120000_retire_crm_case_notes.sql`): `contacts`, `companies`, `deals`, `deal_notes`, `contact_notes`, `tasks`, `tags`, `favicons_excluded_domains`, their views, `global_search`, `merge_contacts` and the gravatar/favicon triggers (F7). The note attachment machinery went with the notes: the bucket now only holds `<organisation_id>/shared/` files, and the `storage_deletion_queue`, `cleanup_note_attachments` and the `delete_note_attachments` function are gone. The `mcp` function was removed and the Supabase OAuth server (which only it used) turned off.
+- **`case_notes` and `case_actions`** (`supabase/schemas/08_service_users_case_notes.sql`): children of `service_users` with the usual tenancy keys and the child-table policy pattern. Triggers stamp the author (`author_sales_id`) and creator (`created_by`) from the signed-in member and keep them, the service user and `created_at` fixed on update. Only the author edits a note; only leads delete notes; leads or the creator delete actions. Both are audited and appear in `service_user_history()`.
+- **WhatsApp preview** (`src/components/atomic-crm/conversation/`): `riskScreen.ts` is the deterministic keyword screen (rules with a minimum keyword sensitivity; self-harm and harm-to-others always apply). It is written as plain functions so the Phase 2 engine can reuse the same rules. A match opens a real escalation (notes name the rule, never the message) and pauses replies while any escalation for the person is unresolved; other messages get scripted replies (`replies.ts`) that record activity events. Messages are not stored.
+- **Demo mode** imitates the database so it can be demoed without a backend: `withDemoRoleRules` (row-level security), `createDemoAuditLog` (audit log), `demoStability` (status dots), plus defaults the database would set. One demo user per role and a switcher (`DemoUserSwitcher`), seeded data that is the same on every load.
 
 ## 4. Mapping the CRM onto the brief
 
@@ -150,14 +157,14 @@ All in `supabase/schemas/08_service_users.sql`, following the tenancy (section 3
 |---|---|---|
 | `sales` | Staff profile (key workers, leads, admins) | **Keep**, tenant-scoped (Session 1); role moves to `memberships` (Session 2) |
 | `configuration` | Per-organisation settings and branding | **Keep**, one row per organisation (Session 1) |
-| `contacts` | Service users | **Replaced** by the `service_users` table (Session 3). Contacts carry sales baggage (companies, newsletter, gravatar lookups, merge logic) that we don't want near health data; the table goes when the Session 4 screens replace its pages. |
-| `contact_notes`, `tasks` | Case notes and actions | **Rebuild** against `service_users` in Session 3 if the screens need them; the Phase 1 screens don't require them. |
-| `companies`, `deals`, `deal_notes`, `tags` | — | **Retire**: hide the screens in Session 4, drop the tables once nothing references them. |
+| `contacts` | Service users | **Replaced** by `service_users` (Session 3); dropped in Session 5. |
+| `contact_notes`, `tasks` | Case notes and actions | **Rebuilt** as `case_notes` and `case_actions` on service users (Session 5); the old tables are dropped. |
+| `companies`, `deals`, `deal_notes`, `tags` | — | **Retired**: screens removed in Session 4, tables dropped in Session 5. |
 | `activity_log` view | Activity feed | **Replace** with the `activity_events` table from the brief (Session 3). |
 | Dashboard | Live Control Tower | **Replace** (Session 4). |
 | Edge functions `users`, `update_password` | Staff management | **Keep**, tenant-scoped (Session 1). |
-| Edge functions `mcp`, `merge_contacts` | — | **Disable** before any real deployment. `mcp` lets an AI client run SQL and must not ship to production. `merge_contacts` runs as the caller (RLS applies). |
-| Edge function `delete_note_attachments` | Attachment cleanup | **Kept**, rewritten in Session 2 to drain a database queue (F9). |
+| Edge functions `mcp`, `merge_contacts` | — | **Removed** (`merge_contacts` in Session 4, `mcp` in Session 5). |
+| Edge function `delete_note_attachments` | Attachment cleanup | Rewritten in Session 2 to drain a database queue (F9); **removed** in Session 5 with note attachments. |
 | Edge function `postmark` | — | **Removed** in Session 2 (F10). |
 
 ## 5. Testing approach
@@ -168,7 +175,7 @@ All in `supabase/schemas/08_service_users.sql`, following the tenancy (section 3
 - The audit suite (`audit_log.test.sql`) proves every insert, update and delete on every audited table writes a log row, views are logged, and nobody (app roles, service role, owner) can change or remove log rows.
 - The Control Tower suite (`control_tower.test.sql`) covers the status dots, the aggregate stats (including that viewers get numbers but no rows) and the audit trail function.
 - The data model suite (`service_users_model.test.sql`) covers the rules the database applies by itself: programme day, default profiles, versioning, escalation timestamps and value constraints.
-- The storage suite (`storage_attachments.test.sql`) proves the bucket is private, who can read and upload what, and that the deletion queue only ever holds the note's own organisation's orphaned files.
+- The storage suite (`storage_attachments.test.sql`) proves the bucket is private and only organisation-shared files can be uploaded or read, within the caller's organisation.
 - Frontend and edge-function unit tests stay on Vitest (`make test`).
 
 ## 6. Running it locally

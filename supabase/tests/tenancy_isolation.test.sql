@@ -13,7 +13,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(98);
+select plan(66);
 
 -- Deferred triggers (handle_new_user) fire at the end of each statement
 -- instead of at commit, which this transaction never reaches.
@@ -45,34 +45,6 @@ select
     (select id from public.sales where email = 'bob@bravo.test') as bob_sales_id;
 grant select on ids to authenticated;
 
-insert into public.companies (id, name, organisation_id, sales_id) values
-    (9001, 'Alpha Housing Trust', 'a0000000-0000-0000-0000-000000000000', (select alice_sales_id from ids)),
-    (9101, 'Bravo Housing Trust', 'b0000000-0000-0000-0000-000000000000', (select bob_sales_id from ids));
-
-insert into public.contacts (id, first_name, last_name, organisation_id, company_id, sales_id) values
-    (9001, 'Alpha', 'Person', 'a0000000-0000-0000-0000-000000000000', 9001, (select alice_sales_id from ids)),
-    (9101, 'Bravo', 'Person', 'b0000000-0000-0000-0000-000000000000', 9101, (select bob_sales_id from ids));
-
-insert into public.contact_notes (id, contact_id, text, organisation_id, sales_id) values
-    (9001, 9001, 'Alpha note', 'a0000000-0000-0000-0000-000000000000', (select alice_sales_id from ids)),
-    (9101, 9101, 'Bravo note', 'b0000000-0000-0000-0000-000000000000', (select bob_sales_id from ids));
-
-insert into public.deals (id, name, stage, organisation_id, company_id, sales_id) values
-    (9001, 'Alpha deal', 'opportunity', 'a0000000-0000-0000-0000-000000000000', 9001, (select alice_sales_id from ids)),
-    (9101, 'Bravo deal', 'opportunity', 'b0000000-0000-0000-0000-000000000000', 9101, (select bob_sales_id from ids));
-
-insert into public.deal_notes (id, deal_id, text, organisation_id, sales_id) values
-    (9001, 9001, 'Alpha deal note', 'a0000000-0000-0000-0000-000000000000', (select alice_sales_id from ids)),
-    (9101, 9101, 'Bravo deal note', 'b0000000-0000-0000-0000-000000000000', (select bob_sales_id from ids));
-
-insert into public.tags (id, name, color, organisation_id) values
-    (9001, 'alpha-tag', '#eeeeee', 'a0000000-0000-0000-0000-000000000000'),
-    (9101, 'bravo-tag', '#eeeeee', 'b0000000-0000-0000-0000-000000000000');
-
-insert into public.tasks (id, contact_id, text, organisation_id, sales_id) values
-    (9001, 9001, 'Alpha task', 'a0000000-0000-0000-0000-000000000000', (select alice_sales_id from ids)),
-    (9101, 9101, 'Bravo task', 'b0000000-0000-0000-0000-000000000000', (select bob_sales_id from ids));
-
 update public.configuration set config = '{"title": "Bravo"}' where organisation_id = 'b0000000-0000-0000-0000-000000000000';
 
 -- Service users get their support profile from a trigger
@@ -87,6 +59,14 @@ insert into public.escalations (id, service_user_id, trigger_type, severity, org
 insert into public.activity_events (id, service_user_id, type, summary, organisation_id) values
     (9001, 9001, 'checkin', 'Alpha check-in', 'a0000000-0000-0000-0000-000000000000'),
     (9101, 9101, 'checkin', 'Bravo check-in', 'b0000000-0000-0000-0000-000000000000');
+
+insert into public.case_notes (id, service_user_id, body, organisation_id) values
+    (9001, 9001, 'Alpha note', 'a0000000-0000-0000-0000-000000000000'),
+    (9101, 9101, 'Bravo note', 'b0000000-0000-0000-0000-000000000000');
+
+insert into public.case_actions (id, service_user_id, title, organisation_id) values
+    (9001, 9001, 'Alpha action', 'a0000000-0000-0000-0000-000000000000'),
+    (9101, 9101, 'Bravo action', 'b0000000-0000-0000-0000-000000000000');
 
 -- Runs the same five checks against one tenant table as the signed-in user.
 -- `insert_into_bravo` is an INSERT that targets Bravo's organisation explicitly.
@@ -135,20 +115,6 @@ select set_config('request.jwt.claims', '{"sub": "a0000000-0000-0000-0000-000000
 set local role authenticated;
 
 -- Every tenant table: read, update, delete and insert across the boundary (5 checks each)
-select * from pg_temp.check_isolation('companies',
-    $$insert into public.companies (name, organisation_id) values ('Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
-select * from pg_temp.check_isolation('contacts',
-    $$insert into public.contacts (first_name, organisation_id) values ('Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
-select * from pg_temp.check_isolation('contact_notes',
-    $$insert into public.contact_notes (contact_id, text, organisation_id) values (9101, 'Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
-select * from pg_temp.check_isolation('deals',
-    $$insert into public.deals (name, stage, organisation_id) values ('Sneaky', 'opportunity', 'b0000000-0000-0000-0000-000000000000')$$);
-select * from pg_temp.check_isolation('deal_notes',
-    $$insert into public.deal_notes (deal_id, text, organisation_id) values (9101, 'Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
-select * from pg_temp.check_isolation('tags',
-    $$insert into public.tags (name, color, organisation_id) values ('Sneaky', '#000000', 'b0000000-0000-0000-0000-000000000000')$$);
-select * from pg_temp.check_isolation('tasks',
-    $$insert into public.tasks (contact_id, text, organisation_id) values (9101, 'Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
 select * from pg_temp.check_isolation('sales',
     $$insert into public.sales (first_name, last_name, email, user_id, organisation_id)
       values ('Sneaky', 'User', 'sneaky@bravo.test', 'a0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-000000000000')$$);
@@ -163,67 +129,51 @@ select * from pg_temp.check_isolation('escalations',
 select * from pg_temp.check_isolation('activity_events',
     $$insert into public.activity_events (service_user_id, type, summary, organisation_id)
       values (9101, 'checkin', 'Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
+select * from pg_temp.check_isolation('case_notes',
+    $$insert into public.case_notes (service_user_id, body, organisation_id) values (9101, 'Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
+select * from pg_temp.check_isolation('case_actions',
+    $$insert into public.case_actions (service_user_id, title, organisation_id) values (9101, 'Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
 
 -- Moving one of your own rows into another organisation
 select throws_ok(
-    $$update public.contacts set organisation_id = 'b0000000-0000-0000-0000-000000000000' where id = 9001$$,
+    $$update public.service_users set organisation_id = 'b0000000-0000-0000-0000-000000000000' where id = 9001$$,
     '42501', null,
-    'contacts: Alpha user cannot move their own row into Bravo');
+    'service_users: Alpha user cannot move their own row into Bravo');
 
 -- New rows are stamped with the caller's organisation automatically
-insert into public.tags (name, color) values ('stamped', '#123456');
+insert into public.case_notes (service_user_id, body) values (9001, 'stamped');
 select is(
-    (select organisation_id from public.tags where name = 'stamped'),
+    (select organisation_id from public.case_notes where body = 'stamped'),
     'a0000000-0000-0000-0000-000000000000'::uuid,
-    'tags: rows inserted without an organisation get the caller''s organisation');
+    'case_notes: rows inserted without an organisation get the caller''s organisation');
 
--- Links across organisations are refused. Notes and tasks are refused first
--- by row-level security (their parent must be visible); the composite foreign
--- keys are the backstop, checked again below as the database owner.
+-- Links across organisations are refused. Child rows are refused first by
+-- row-level security (their service user must be visible); the composite
+-- foreign keys are the backstop, checked again below as the database owner.
 select throws_ok(
-    $$insert into public.contacts (first_name, company_id) values ('Linked', 9101)$$,
-    '23503', null,
-    'contacts: cannot attach a contact to a Bravo company');
-select throws_ok(
-    $$insert into public.contact_notes (contact_id, text) values (9101, 'Linked')$$,
+    $$insert into public.case_notes (service_user_id, body) values (9101, 'Linked')$$,
     '42501', null,
-    'contact_notes: cannot attach a note to a Bravo contact');
+    'case_notes: cannot attach a note to a Bravo service user');
 select throws_ok(
-    $$insert into public.tasks (contact_id, text) values (9101, 'Linked')$$,
+    $$insert into public.case_actions (service_user_id, title) values (9101, 'Linked')$$,
     '42501', null,
-    'tasks: cannot attach a task to a Bravo contact');
+    'case_actions: cannot attach an action to a Bravo service user');
 select throws_ok(
-    $$insert into public.deals (name, stage, company_id) values ('Linked', 'opportunity', 9101)$$,
+    format('update public.case_actions set assigned_to = %s where id = 9001', (select bob_sales_id from ids)),
     '23503', null,
-    'deals: cannot attach a deal to a Bravo company');
+    'case_actions: cannot assign a Bravo staff member to an Alpha action');
 select throws_ok(
-    $$insert into public.deal_notes (deal_id, text) values (9101, 'Linked')$$,
-    '42501', null,
-    'deal_notes: cannot attach a note to a Bravo deal');
-select throws_ok(
-    format('update public.contacts set sales_id = %s where id = 9001', (select bob_sales_id from ids)),
+    format('update public.service_users set assigned_worker_id = %s where id = 9001', (select bob_sales_id from ids)),
     '23503', null,
-    'contacts: cannot assign a Bravo staff member to an Alpha contact');
+    'service_users: cannot assign a Bravo staff member to an Alpha service user');
 
--- Views and search only return the caller's organisation
+-- Views and functions only return the caller's organisation
 select is(
     (select count(*) from public.service_users_summary where id = 9101), 0::bigint,
     'service_users_summary: Alpha user cannot see Bravo service users');
 select is(
-    (select count(*) from public.contacts_summary where id = 9101), 0::bigint,
-    'contacts_summary: Alpha user cannot see Bravo contacts');
-select is(
-    (select count(*) from public.companies_summary where id = 9101), 0::bigint,
-    'companies_summary: Alpha user cannot see Bravo companies');
-select is(
-    (select count(*) from public.activity_log where id like '%.9101.%'), 0::bigint,
-    'activity_log: Alpha user cannot see Bravo activity');
-select is(
-    (select count(*) from public.global_search('Bravo')), 0::bigint,
-    'global_search: Alpha user cannot find Bravo records');
-select ok(
-    (select count(*) from public.global_search('Alpha')) > 0,
-    'global_search: Alpha user finds their own records');
+    (select count(*) from public.service_user_history(9101)), 0::bigint,
+    'service_user_history: Alpha user cannot see a Bravo service user''s history');
 
 -- Organisations and memberships
 select results_eq(
@@ -288,18 +238,16 @@ select set_config('request.jwt.claims', '{"sub": "c0000000-0000-0000-0000-000000
 set local role authenticated;
 
 select is(
-    (select count(*) from public.companies) + (select count(*) from public.contacts)
-      + (select count(*) from public.contact_notes) + (select count(*) from public.deals)
-      + (select count(*) from public.deal_notes) + (select count(*) from public.tags)
-      + (select count(*) from public.tasks) + (select count(*) from public.sales)
+    (select count(*) from public.sales)
       + (select count(*) from public.configuration) + (select count(*) from public.organisations)
       + (select count(*) from public.memberships) + (select count(*) from public.service_users)
       + (select count(*) from public.support_profiles) + (select count(*) from public.escalations)
-      + (select count(*) from public.activity_events),
+      + (select count(*) from public.activity_events) + (select count(*) from public.case_notes)
+      + (select count(*) from public.case_actions) + (select count(*) from public.audit_log),
     0::bigint,
     'no membership: sees no rows in any tenant table');
 select throws_ok(
-    $$insert into public.companies (name) values ('Orphan')$$,
+    $$insert into public.service_users (display_name, reference_code, release_date) values ('Orphan', 'RE-99998', current_date)$$,
     '42501', null,
     'no membership: cannot create rows');
 
@@ -310,8 +258,8 @@ select throws_ok(
 reset role;
 
 select is(
-    (select count(*) from public.companies where organisation_id = 'b0000000-0000-0000-0000-000000000000'), 1::bigint,
-    'Bravo still has exactly its one company');
+    (select count(*) from public.service_users where organisation_id = 'b0000000-0000-0000-0000-000000000000'), 1::bigint,
+    'Bravo still has exactly its one service user');
 select is(
     (select config ->> 'title' from public.configuration where organisation_id = 'b0000000-0000-0000-0000-000000000000'), 'Bravo',
     'Bravo configuration is unchanged');
@@ -322,17 +270,13 @@ select is(
 -- The composite foreign keys refuse cross-organisation links even where
 -- row-level security doesn't apply (service role, triggers)
 select throws_ok(
-    $$insert into public.contact_notes (contact_id, text, organisation_id) values (9101, 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
+    $$insert into public.case_notes (service_user_id, body, organisation_id) values (9101, 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
     '23503', null,
-    'contact_notes: foreign key refuses an Alpha note on a Bravo contact, even without RLS');
+    'case_notes: foreign key refuses an Alpha note on a Bravo service user, even without RLS');
 select throws_ok(
-    $$insert into public.tasks (contact_id, text, organisation_id) values (9101, 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
+    $$insert into public.case_actions (service_user_id, title, organisation_id) values (9101, 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
     '23503', null,
-    'tasks: foreign key refuses an Alpha task on a Bravo contact, even without RLS');
-select throws_ok(
-    $$insert into public.deal_notes (deal_id, text, organisation_id) values (9101, 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
-    '23503', null,
-    'deal_notes: foreign key refuses an Alpha note on a Bravo deal, even without RLS');
+    'case_actions: foreign key refuses an Alpha action on a Bravo service user, even without RLS');
 select throws_ok(
     $$insert into public.escalations (service_user_id, trigger_type, severity, organisation_id)
       values (9101, 'manual', 'low', 'a0000000-0000-0000-0000-000000000000')$$,

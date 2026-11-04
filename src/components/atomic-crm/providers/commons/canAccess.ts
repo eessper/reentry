@@ -27,7 +27,8 @@ const WORK_ON: readonly Action[] = ["list", "show", "edit"];
  * spares people buttons that would fail.
  * - org_admin: everything, including the team (sales) and settings.
  * - clinical_lead: all service-user work, including adding and assigning.
- * - key_worker: their own service users' profiles, escalations and activity.
+ * - key_worker: their own service users' profiles, escalations, activity,
+ *   case notes and actions.
  * - viewer: nothing but the Control Tower's aggregates.
  */
 const ACCESS: Record<
@@ -39,12 +40,16 @@ const ACCESS: Record<
     support_profiles: WORK_ON,
     escalations: ALL,
     activity_events: ["list", "show", "create"],
+    case_notes: ALL,
+    case_actions: ALL,
   },
   key_worker: {
     service_users: WORK_ON,
     support_profiles: WORK_ON,
     escalations: WORK_ON,
     activity_events: ["list", "show", "create"],
+    case_notes: ["list", "show", "create", "edit"],
+    case_actions: ["list", "show", "create", "edit", "delete"],
   },
   viewer: {},
 };

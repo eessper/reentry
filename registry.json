@@ -202,6 +202,18 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/providers/fakerest/internal/demoStability.ts",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/providers/fakerest/internal/demoRoleRules.ts",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/providers/fakerest/internal/demoAuditLog.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/providers/fakerest/dataGenerator/utils.ts",
           "type": "registry:component"
         },
@@ -338,6 +350,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/layout/DemoUserSwitcher.tsx",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/escalations/index.ts",
           "type": "registry:component"
         },
@@ -362,6 +378,22 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/conversation/useConversation.ts",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/conversation/riskScreen.ts",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/conversation/replies.ts",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/conversation/ConversationPreview.tsx",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/controlTower/StabilityChart.tsx",
           "type": "registry:component"
         },
@@ -379,6 +411,18 @@
         },
         {
           "path": "src/components/atomic-crm/controlTower/ActivityFeed.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/caseNotes/caseActionDates.ts",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/caseNotes/CaseNotes.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/caseNotes/CaseActions.tsx",
           "type": "registry:component"
         },
         {

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Atomic CRM is a full-featured CRM built with React, shadcn-admin-kit, and Supabase. It provides contact management, task tracking, notes, email capture, and deal management with a Kanban board.
+Re-entry's Control Tower, built on Atomic CRM (React, shadcn-admin-kit, Supabase). It supports people leaving prison: staff configure each person's support profile, watch the caseload on the Live Control Tower, handle escalations, and keep case notes and actions. See `CLAUDE.md` and `docs/` for the project rules.
 
 ## Development Commands
 
@@ -67,7 +67,9 @@ src/
 ├── components/
 │   ├── admin/              # Shadcn Admin Kit components (mutable dependency)
 │   ├── atomic-crm/         # Re-entry Control Tower application code
+│   │   ├── caseNotes/      # Case notes and actions on a service user's profile
 │   │   ├── controlTower/   # Landing page: KPIs, stability chart, cohort, activity feed
+│   │   ├── conversation/   # WhatsApp preview: deterministic risk screen and scripted replies
 │   │   ├── escalations/    # Escalation queue (acknowledge, resolve)
 │   │   ├── layout/         # App layout components
 │   │   ├── login/          # Authentication pages
@@ -84,14 +86,14 @@ src/
 └── App.tsx                 # Application entry point
 
 supabase/
-├── functions/              # Edge functions (user management, attachment cleanup)
+├── functions/              # Edge functions (user management, password reset)
 ├── migrations/             # Database migrations (auto-generated, do not edit directly)
 └── schemas/                # Declarative schema (source of truth for DB structure)
 ```
 
 ### Key Architecture Patterns
 
-For more details, check out the doc/src/content/docs/developers/architecture-choices.mdx document.
+For more details, check out `docs/ARCHITECTURE.md`. How the app is used is in `docs/USER_GUIDE.md`; deployment and the WhatsApp/AI integration are in `docs/TECHNICAL_GUIDE.md`.
 
 #### Mutable Dependencies
 
@@ -101,19 +103,11 @@ The codebase includes mutable dependencies that should be modified directly if n
 
 #### Configuration via `<CRM>` Component
 
-The `src/App.tsx` file renders the `<CRM>` component, which accepts props for domain-specific configuration:
-- `contactGender`: Gender options
-- `companySectors`: Company industry sectors
-- `dealCategories`, `dealStages`, `dealPipelineStatuses`: Deal configuration
-- `noteStatuses`: Note status options with colors
-- `taskTypes`: Task type options
-- `logo`, `title`: Branding
-- `lightTheme`, `darkTheme`: Theme customization
-- `disableTelemetry`: Opt-out of anonymous usage tracking
+The `src/App.tsx` file renders the `<CRM>` component. Its props are technical (`dataProvider`, `authProvider`, `i18nProvider`, `store`, `dashboard`, `layout`, `disableTelemetry`); branding (title, logos) is per organisation in the `configuration` table, edited on the Settings page. Defaults are in `src/components/atomic-crm/root/defaultConfiguration.ts`.
 
 #### Database Views
 
-Complex queries are handled via database views to simplify frontend code and reduce HTTP overhead. For example, `contacts_summary` provides aggregated contact data including task counts.
+Complex queries are handled via database views to simplify frontend code and reduce HTTP overhead. For example, `service_users_summary` adds the programme day, open escalations, status dot and last check-in to each service user.
 
 #### Database Triggers
 
@@ -123,7 +117,7 @@ User data syncs between Supabase's `auth.users` table and the CRM's `sales` tabl
 
 Located in `supabase/functions/`:
 - User management (creating/updating users, account disabling)
-- Attachment cleanup (drains the storage deletion queue)
+- Password reset (`update_password`)
 
 #### Data Providers
 

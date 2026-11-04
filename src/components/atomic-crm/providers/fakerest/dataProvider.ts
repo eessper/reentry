@@ -1,7 +1,12 @@
-import { withLifecycleCallbacks, type Identifier } from "ra-core";
+import {
+  withLifecycleCallbacks,
+  type Identifier,
+  type RaRecord,
+} from "ra-core";
 import fakeRestDataProvider from "ra-data-fakerest";
 
 import type {
+  ActivityEvent,
   ControlTowerStats,
   Escalation,
   Sale,
@@ -17,6 +22,9 @@ import {
 } from "./authProvider";
 import generateData from "./dataGenerator";
 import type { Db } from "./dataGenerator/types";
+import { AUDITED_RESOURCES, createDemoAuditLog } from "./internal/demoAuditLog";
+import { type DemoIdentity, withDemoRoleRules } from "./internal/demoRoleRules";
+import { withDerivedFields } from "./internal/demoStability";
 import { withSupabaseFilterAdapter } from "./internal/supabaseAdapter";
 
 export interface CreateFakeRestDataProviderOptions {
@@ -36,8 +44,9 @@ const processConfigLogo = async (logo: any): Promise<string> => {
 
 /**
  * The in-browser demo data provider (`make start-demo`). It mirrors the
- * Supabase provider's custom methods; there is no audit log or row-level
- * security in the demo, so every demo account sees all the data.
+ * Supabase provider's custom methods, and imitates what the database does:
+ * role rules (withDemoRoleRules), the audit log (an in-memory copy) and the
+ * summary view's derived fields (demoStability).
  */
 export const createDataProvider = ({
   db = generateData(),
@@ -45,19 +54,88 @@ export const createDataProvider = ({
   authProvider,
   silent = false,
 }: CreateFakeRestDataProviderOptions = {}): CrmDataProvider => {
-  const baseDataProvider = fakeRestDataProvider(db, !silent, latency);
   const getIdentity = async () =>
     authProvider?.getIdentity?.() ?? defaultAuthProvider.getIdentity?.();
+  const rawDataProvider = fakeRestDataProvider(db, !silent, latency);
+  const baseDataProvider = withDemoRoleRules(
+    rawDataProvider,
+    getIdentity as () => Promise<DemoIdentity>,
+  );
 
-  const getAll = <T extends { id: Identifier }>(resource: string) =>
-    baseDataProvider.getList<T>(resource, {
+  const auditLog = createDemoAuditLog();
+  const actorName = async () => (await getIdentity())?.fullName ?? "System";
+
+  const getAll = <T extends { id: Identifier }>(
+    resource: string,
+    provider = baseDataProvider,
+  ) =>
+    provider.getList<T>(resource, {
       pagination: { page: 1, perPage: 1000 },
       sort: { field: "id", order: "ASC" },
       filter: {},
     });
 
+  const deriveServiceUsers = async <T extends RaRecord>(records: T[]) => {
+    const [escalations, events] = await Promise.all([
+      getAll<Escalation>("escalations", rawDataProvider),
+      getAll<ActivityEvent>("activity_events", rawDataProvider),
+    ]);
+    return records.map(
+      (record) =>
+        withDerivedFields(
+          record as unknown as ServiceUser,
+          escalations.data,
+          events.data,
+        ) as unknown as T,
+    );
+  };
+
   const dataProviderWithCustomMethod: CrmDataProvider = {
     ...baseDataProvider,
+    // Changes to people's records go in the demo audit log, like the triggers do
+    create: async (resource, params) => {
+      const result = await baseDataProvider.create(resource, params);
+      if (AUDITED_RESOURCES.includes(resource)) {
+        auditLog.record({
+          action: "create",
+          tableName: resource,
+          recordId: result.data.id,
+          actorName: await actorName(),
+          after: result.data,
+        });
+      }
+      return result;
+    },
+    update: async (resource, params) => {
+      const before = AUDITED_RESOURCES.includes(resource)
+        ? (await rawDataProvider.getOne(resource, { id: params.id })).data
+        : null;
+      const result = await baseDataProvider.update(resource, params);
+      if (before) {
+        auditLog.record({
+          action: "update",
+          tableName: resource,
+          recordId: params.id,
+          actorName: await actorName(),
+          before,
+          after: result.data,
+        });
+      }
+      return result;
+    },
+    delete: async (resource, params) => {
+      const result = await baseDataProvider.delete(resource, params);
+      if (AUDITED_RESOURCES.includes(resource)) {
+        auditLog.record({
+          action: "delete",
+          tableName: resource,
+          recordId: params.id,
+          actorName: await actorName(),
+          before: result.data,
+        });
+      }
+      return result;
+    },
     signUp: async ({
       email,
       password,
@@ -141,14 +219,38 @@ export const createDataProvider = ({
 
       return true;
     },
-    // The demo has no audit log
-    logRecordView: async () => undefined,
-    getServiceUserHistory: async () => [],
-    getControlTowerStats: async () =>
-      computeDemoStats(
-        await getAll<ServiceUser>("service_users"),
-        await getAll<Escalation>("escalations"),
-      ),
+    logRecordView: async (tableName, recordId) => {
+      const { data } = await baseDataProvider.getOne(tableName, {
+        id: recordId,
+      });
+      auditLog.record({
+        action: "view",
+        tableName,
+        recordId,
+        actorName: await actorName(),
+        serviceUserId:
+          tableName === "service_users" ? recordId : data.service_user_id,
+      });
+    },
+    getServiceUserHistory: async (serviceUserId) => {
+      // Throws, like the database, when the caller can't see this person
+      await baseDataProvider.getOne("service_users", { id: serviceUserId });
+      return auditLog.historyFor(serviceUserId);
+    },
+    // Aggregates: key workers get their caseload, everyone else (viewers
+    // included) the whole organisation, as control_tower_stats() does.
+    getControlTowerStats: async () => {
+      const identity = await getIdentity();
+      const isCaseload = identity?.role === "key_worker";
+      const provider = isCaseload ? baseDataProvider : rawDataProvider;
+      const serviceUsers = await getAll<ServiceUser>("service_users", provider);
+      return computeDemoStats(
+        isCaseload ? "caseload" : "organisation",
+        { data: await deriveServiceUsers(serviceUsers.data) },
+        await getAll<Escalation>("escalations", provider),
+        await getAll<ActivityEvent>("activity_events", provider),
+      );
+    },
     getConfiguration: async (): Promise<ConfigurationContextValue> => {
       const { data } = await baseDataProvider.getOne("configuration", {
         id: 1,
@@ -185,6 +287,93 @@ export const createDataProvider = ({
           }
           return params;
         },
+      },
+      // The summary view's derived fields (status dot, open escalations)
+      {
+        resource: "service_users",
+        afterGetList: async (result) => ({
+          ...result,
+          data: await deriveServiceUsers(result.data),
+        }),
+        afterGetMany: async (result) => ({
+          ...result,
+          data: await deriveServiceUsers(result.data),
+        }),
+        afterGetOne: async (result) => ({
+          ...result,
+          data: (await deriveServiceUsers([result.data]))[0],
+        }),
+      },
+      // Mirror the database defaults and triggers that stamp who did what, and when
+      {
+        // version_support_profile(): every save is a new version
+        resource: "support_profiles",
+        beforeUpdate: async (params) => {
+          const { data: current } = await rawDataProvider.getOne(
+            "support_profiles",
+            { id: params.id },
+          );
+          return {
+            ...params,
+            data: {
+              ...params.data,
+              version: current.version + 1,
+              updated_at: new Date().toISOString(),
+              updated_by: (await getIdentity())?.id ?? null,
+            },
+          };
+        },
+      },
+      {
+        resource: "escalations",
+        beforeCreate: async (params) => ({
+          ...params,
+          data: {
+            status: "open",
+            assigned_to: null,
+            acknowledged_at: null,
+            resolved_at: null,
+            ...params.data,
+            opened_at: new Date().toISOString(),
+          },
+        }),
+      },
+      {
+        resource: "activity_events",
+        beforeCreate: async (params) => ({
+          ...params,
+          data: {
+            ...params.data,
+            actor_sales_id: (await getIdentity())?.id ?? null,
+            created_at: new Date().toISOString(),
+          },
+        }),
+      },
+      {
+        resource: "case_notes",
+        beforeCreate: async (params) => {
+          const now = new Date().toISOString();
+          return {
+            ...params,
+            data: {
+              ...params.data,
+              author_sales_id: (await getIdentity())?.id ?? null,
+              created_at: now,
+              updated_at: now,
+            },
+          };
+        },
+      },
+      {
+        resource: "case_actions",
+        beforeCreate: async (params) => ({
+          ...params,
+          data: {
+            ...params.data,
+            created_by: (await getIdentity())?.id ?? null,
+            created_at: new Date().toISOString(),
+          },
+        }),
       },
       {
         resource: "sales",
@@ -228,11 +417,15 @@ const convertFileToBase64 = (file: { rawFile: Blob }): Promise<string> =>
     reader.readAsDataURL(file.rawFile);
   });
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 // The demo has no history to replay, so every day of the chart shows the
-// current status dots, and adherence isn't known.
+// current status dots. Adherence counts the last week's check-ins.
 const computeDemoStats = (
+  scope: ControlTowerStats["scope"],
   serviceUsers: { data: ServiceUser[] },
   escalations: { data: Escalation[] },
+  events: { data: ActivityEvent[] },
 ): ControlTowerStats => {
   const active = serviceUsers.data.filter((user) => user.status !== "exited");
   const open = escalations.data.filter(
@@ -240,12 +433,22 @@ const computeDemoStats = (
   );
   const count = (stability: ServiceUser["stability"]) =>
     active.filter((user) => user.stability === stability).length;
+  const lastWeek = events.data.filter(
+    (event) => Date.now() - new Date(event.created_at).getTime() <= WEEK_MS,
+  );
+  const completed = lastWeek.filter((event) => event.type === "checkin").length;
+  const missed = lastWeek.filter(
+    (event) => event.type === "missed_checkin",
+  ).length;
   return {
-    scope: "organisation",
+    scope,
     active_clients: active.length,
-    checkins_completed: 0,
-    checkins_missed: 0,
-    checkin_adherence: null,
+    checkins_completed: completed,
+    checkins_missed: missed,
+    checkin_adherence:
+      completed + missed === 0
+        ? null
+        : Math.round((100 * completed) / (completed + missed)),
     open_escalations: open.length,
     urgent_escalations: open.filter(
       (escalation) =>

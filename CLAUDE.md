@@ -2,7 +2,7 @@
 
 # Re-entry project notes (read first)
 
-This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHASE1_BRIEF.md` (what we're building, the session plan) and `docs/ARCHITECTURE.md` (how the code maps to it, and the security findings F1–F10 with the session that fixes each). Phase 1 uses **synthetic data only**.
+This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHASE1_BRIEF.md` (what we're building, the session plan) and `docs/ARCHITECTURE.md` (how the code maps to it, and the security findings F1–F10 with the session that fixes each). `docs/USER_GUIDE.md` describes every screen, the roles and the expected operating model; keep it in step with the UI. `docs/TECHNICAL_GUIDE.md` covers deployment and the Phase 2 WhatsApp and AI design; keep it in step with deploy changes. Environment variables are listed in `.env.example`. Phase 1 uses **synthetic data only**.
 
 ## Tenancy (Session 1, done)
 
@@ -18,15 +18,14 @@ This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHAS
 - **Roles live only in `memberships.role`** (`sales.administrator` is gone). The frontend reads them through the `sales_summary` view; only the `users` edge function (service role) changes them, and only for an org admin acting on someone else.
 - Role rules are enforced in RLS with the helpers in `supabase/schemas/02_roles.sql` (`private.current_sales_id()`, `private.sees_all_records()`, `private.is_case_staff()`, `private.can_access_assigned(org, sales_id)`):
   - org_admin and clinical_lead see every record in their organisation; key_worker sees only rows whose `sales_id` is theirs; viewer sees no individual records.
-  - Assignable tables (`contacts`, `deals`) inline the assignment rule in their policies (so each helper runs once per query). Child tables (`contact_notes`, `tasks`, `deal_notes`) use `exists (select 1 from <parent> where id = <parent_id>)`, which runs under the parent's policy. New tables copy these two patterns (Session 3 did: `service_users` like `contacts`, its child tables like `contact_notes`) and get cases in `supabase/tests/roles_permissions.test.sql`.
-- **Audit log** (`supabase/schemas/09_audit.sql`): every tenant table has an `audit_row_change` trigger. Add one to each new tenant table and a `pg_temp.check_audit(...)` call to `supabase/tests/audit_log.test.sql`. Views are logged with `public.log_record_view(table_name, record_id)` for `service_users`, `support_profiles` and `contacts`. The UI calls it through `dataProvider.logRecordView` (see `useLogRecordView`). Nobody can update, delete or truncate `audit_log`, not even the service role or the owner (triggers).
-- **Attachments** are private. Paths are `<organisation_id>/notes/<uuid>` (note attachments, readable like the note) or `<organisation_id>/shared/<uuid>` (logos, avatars, readable by the organisation). The frontend uploads and signs URLs through `src/components/atomic-crm/providers/supabase/attachmentStorage.ts`; never store or render a public URL. Orphaned note files are queued by the `cleanup_note_attachments` trigger in `storage_deletion_queue` and deleted by the `delete_note_attachments` function, which takes no paths from the request.
+  - The assignable table (`service_users`) inlines the assignment rule in its policies (so each helper runs once per query). Child tables (`support_profiles`, `escalations`, `activity_events`, `case_notes`, `case_actions`) use `exists (select 1 from service_users su where su.id = service_user_id)`, which runs under the parent's policy. New tables copy these patterns and get cases in `supabase/tests/roles_permissions.test.sql`.
+- **Audit log** (`supabase/schemas/09_audit.sql`): every tenant table has an `audit_row_change` trigger. Add one to each new tenant table and a `pg_temp.check_audit(...)` call to `supabase/tests/audit_log.test.sql`. Views are logged with `public.log_record_view(table_name, record_id)` for `service_users` and `support_profiles`. The UI calls it through `dataProvider.logRecordView` (see `useLogRecordView`). Nobody can update, delete or truncate `audit_log`, not even the service role or the owner (triggers).
+- **Attachments** are private and only hold `<organisation_id>/shared/<uuid>` files (logos, avatars, readable by the organisation). The frontend uploads and signs URLs through `src/components/atomic-crm/providers/supabase/attachmentStorage.ts`; never store or render a public URL. Note attachments (and their deletion queue and function) were removed in Session 5: if files about service users are ever needed, design their policies like the child tables and add storage tests.
 - The `postmark` inbound-email function was removed (it sent data to a US service and couldn't be tenant-scoped). Don't bring back third-party services without checking the UK/EU residency rule in the brief.
 
 ## Service users and demo data (Session 3, done)
 
 - The Re-entry data model is in `supabase/schemas/08_service_users.sql`: `service_users` (assigned through `assigned_worker_id`), `support_profiles` (one per service user, created by a trigger, `version` bumped on every update), `escalations` (acknowledge/resolve times stamped by a trigger), `activity_events` (append-only for app roles), and the `service_users_summary` view (derived `programme_day`, `nb_open_escalations`). Build the Session 4 screens on these, not on `contacts`.
-- The CRM tables (`contacts`, `companies`, `deals`, `tasks`, `tags`, notes) are still in the database, but nothing in the app uses them since Session 4. Drop them in a dedicated migration (see "Retiring the CRM tables" below).
 - Demo data: `npx supabase db reset --local && make seed-demo` (see `scripts/seed-demo.mjs`). Two fictional organisations; staff sign in as `admin|lead|keyworker1|keyworker2|viewer@<northbridge|harbourside>.example.test` with `DEMO_PASSWORD` (default `demo-password`, local only). The script refuses non-local URLs unless given `--allow-remote`.
 
 ## Screens (Session 4, done)
@@ -36,19 +35,22 @@ This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHAS
 - `/escalations` queue (`escalations/`): acknowledge, and resolve with a note.
 - `/sales` Team (org admins): invite staff and set roles through the `users` edge function.
 - UI access follows `providers/commons/canAccess.ts` (a role matrix mirroring RLS). The status dots come from `service_user_stability()`.
-- The Atomic CRM screens (contacts, companies, deals, tasks, notes, tags, CRM import, global search) were removed from the frontend in Session 4, as were the `merge_contacts` edge function and the MCP card on the profile page. The `mcp` edge function itself still exists: do not deploy it.
-- FakeRest demo mode (`make start-demo`) generates service users in `providers/fakerest/dataGenerator/serviceUsers.ts`; it has no audit log or row-level security.
+- The Atomic CRM screens were removed from the frontend in Session 4.
 
-## Retiring the CRM tables (next)
+## Case work, WhatsApp preview and demo (Session 5, done)
 
-Drop `contacts`, `companies`, `deals`, `deal_notes`, `contact_notes`, `tasks`, `tags`, their views (`contacts_summary`, `companies_summary`, `activity_log`), `global_search`, `merge_contacts` and the favicon/gravatar triggers (finding F7). The tenancy, roles, audit and storage pgTAP suites use contacts and notes as fixtures, so move those fixtures to `service_users`/`escalations` in the same change, and make note attachments (`storage_deletion_queue`, the storage policies) follow whatever replaces notes.
+- The CRM tables, views, search, triggers (F7), note attachments, and the `mcp` and `delete_note_attachments` functions are gone (migration `20261102120000_retire_crm_case_notes.sql`). The Supabase OAuth server is off in `config.toml`; keep it off in hosted projects too.
+- `case_notes` and `case_actions` (`supabase/schemas/08_service_users_case_notes.sql`) are child tables of `service_users`; triggers stamp the author/creator. They show on the profile (`caseNotes/`) and in the audit trail.
+- The profile's **WhatsApp preview** (`conversation/`) runs the deterministic risk screen (`riskScreen.ts`, keep it free of AI and side effects so Phase 2 can reuse it) and scripted replies. It creates real escalations and activity events but never stores message text; escalation notes name the rule, not the message.
+- **Demo mode** (`make start-demo`, also the hosted demo built with `vite.demo.config.ts`) imitates the database in `providers/fakerest/internal/`: `demoRoleRules` (RLS), `demoAuditLog`, `demoStability`, plus lifecycle callbacks for column defaults and stamps. When the database gains a rule or default a demo relies on, mirror it there. Demo staff (one per role) are in `dataGenerator/sales.ts`; the header's `DemoUserSwitcher` only renders when `VITE_IS_DEMO` is `true`. Demo data is seeded (`DEMO_SEED`), so it's the same on every load.
+- Building the hosted demo: `NODE_ENV=CI npx vite build --config vite.demo.config.ts --outDir <dir>` (hash routing, relative paths, no backend).
 
 ## Database workflow in cloud sessions
 
 - Docker may not be running: start it with `dockerd` as a background command, then `npx supabase start`.
 - `npx supabase db diff` (migra) can't reach npm from inside its container here. Hand-write migrations, then confirm they match `supabase/schemas/` with `npx supabase db diff --local --use-pg-schema`. That engine always reports a spurious `DROP EXTENSION "pgjwt"` and some pre-existing grant differences; nothing else should appear.
 - Write the declarative schema first, then the migration. Session 2's migration was assembled from the schema files' text so function bodies match `pg_dump` exactly; copy blocks the same way rather than retyping them.
-- Run database tests with `make test-db` (tenancy, roles, audit, storage and data model suites); frontend and function tests with `make test`.
+- Run database tests with `make test-db` (tenancy, roles, audit, storage, data model and Control Tower suites); frontend and function tests with `make test`. `supabase/seed.sql` is empty on purpose; load demo data with `make seed-demo`.
 
 # Agent Workflow
 

@@ -229,6 +229,8 @@ const DesktopAdmin = (
       <Resource name="escalations" {...escalations} />
       <Resource name="support_profiles" />
       <Resource name="activity_events" />
+      <Resource name="case_notes" />
+      <Resource name="case_actions" />
       <Resource name="sales" {...sales} />
     </Admin>
   );
@@ -306,6 +308,8 @@ const MobileAdmin = (
         <Resource name="escalations" {...escalations} />
         <Resource name="support_profiles" />
         <Resource name="activity_events" />
+        <Resource name="case_notes" />
+        <Resource name="case_actions" />
         <Resource
           name="sales"
           recordRepresentation={sales.recordRepresentation}

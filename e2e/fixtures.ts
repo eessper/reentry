@@ -10,18 +10,12 @@ const adminSupabase = createClient(
 // Tables in FK-safe deletion order (children before parents). audit_log is
 // append-only and has no foreign keys, so it is left alone.
 const TABLES = [
+  "case_actions",
+  "case_notes",
   "activity_events",
   "escalations",
   "support_profiles",
   "service_users",
-  "tasks",
-  "contact_notes",
-  "deal_notes",
-  "deals",
-  "contacts",
-  "companies",
-  "tags",
-  "favicons_excluded_domains",
   "configuration",
   "sales",
   "memberships",

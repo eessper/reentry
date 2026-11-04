@@ -7,6 +7,7 @@ import { UserMenu } from "@/components/admin/user-menu";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 import { useConfigurationContext } from "../root/ConfigurationContext";
+import { DemoUserSwitcher } from "./DemoUserSwitcher";
 
 const Header = () => {
   const { darkModeLogo, lightModeLogo, title } = useConfigurationContext();
@@ -83,6 +84,7 @@ const Header = () => {
                 </nav>
               </div>
               <div className="flex items-center">
+                <DemoUserSwitcher />
                 <ThemeModeToggle />
                 <RefreshButton />
                 <UserMenu>

@@ -96,8 +96,8 @@ end;
 $$;
 
 -- A service user's history for the profile's Audit Trail panel: changes to
--- the service user, their support profile and their escalations, plus record
--- views, newest first, with the name of whoever did it. Runs as the caller,
+-- the service user, their support profile, escalations, case notes and
+-- actions, plus record views, newest first, with the name of whoever did it. Runs as the caller,
 -- so audit_log's own policy decides what comes back.
 create or replace function public.service_user_history(service_user_id bigint, max_results integer default 50)
 returns table (
@@ -126,7 +126,7 @@ as $$
   from public.audit_log l
     left join public.sales s on s.user_id = l.actor_user_id
   where (l.table_name = 'service_users' and l.record_id = service_user_history.service_user_id::text)
-    or (l.table_name in ('support_profiles', 'escalations')
+    or (l.table_name in ('support_profiles', 'escalations', 'case_notes', 'case_actions')
         and coalesce(l.after, l.before) ->> 'service_user_id' = service_user_history.service_user_id::text)
     or (l.table_name = 'support_profiles' and l.action = 'view' and l.record_id = (
         select sp.id::text from public.support_profiles sp where sp.service_user_id = service_user_history.service_user_id

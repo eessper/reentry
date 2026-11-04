@@ -1,26 +1,30 @@
-import { internet, name } from "faker/locale/en_US";
-
 import type { RAFile, Sale } from "../../../types";
 import type { Db } from "./types";
 
-export const generateSales = (_: Db): Sale[] => {
-  const randomSales = Array.from(Array(5).keys()).map((id) => {
-    const first_name = name.firstName();
-    const last_name = name.lastName();
-    const email = internet.email(first_name, last_name);
+/**
+ * Demo staff: the organisation admin (Jane Doe) plus one of every other role,
+ * so the demo can be shown from each point of view (see DemoUserSwitcher).
+ */
+const DEMO_STAFF: ReadonlyArray<
+  Pick<Sale, "first_name" | "last_name" | "role">
+> = [
+  { first_name: "Sam", last_name: "Okafor", role: "clinical_lead" },
+  { first_name: "Mo", last_name: "Rahman", role: "key_worker" },
+  { first_name: "Ellie", last_name: "Hughes", role: "key_worker" },
+  { first_name: "Dan", last_name: "Price", role: "key_worker" },
+  { first_name: "Vic", last_name: "Turner", role: "viewer" },
+];
 
-    return {
-      id: id + 1,
-      user_id: `${id + 1}`,
-      first_name,
-      last_name,
-      email,
-      secondary_emails: [],
-      password: "demo",
-      role: "key_worker" as const,
-      disabled: false,
-    };
-  });
+export const generateSales = (_: Db): Sale[] => {
+  const randomSales = DEMO_STAFF.map((staff, index) => ({
+    id: index + 1,
+    user_id: `${index + 1}`,
+    ...staff,
+    email: `${staff.first_name.toLowerCase()}@demo.example.test`,
+    secondary_emails: [],
+    password: "demo",
+    disabled: false,
+  }));
   return [
     {
       id: 0,
