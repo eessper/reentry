@@ -13,7 +13,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(74);
+select plan(98);
 
 -- Deferred triggers (handle_new_user) fire at the end of each statement
 -- instead of at commit, which this transaction never reaches.
@@ -75,8 +75,23 @@ insert into public.tasks (id, contact_id, text, organisation_id, sales_id) value
 
 update public.configuration set config = '{"title": "Bravo"}' where organisation_id = 'b0000000-0000-0000-0000-000000000000';
 
+-- Service users get their support profile from a trigger
+insert into public.service_users (id, display_name, reference_code, release_date, organisation_id, assigned_worker_id) values
+    (9001, 'Alpha Person', 'RE-90001', current_date - 3, 'a0000000-0000-0000-0000-000000000000', (select alice_sales_id from ids)),
+    (9101, 'Bravo Person', 'RE-91001', current_date - 3, 'b0000000-0000-0000-0000-000000000000', (select bob_sales_id from ids));
+
+insert into public.escalations (id, service_user_id, trigger_type, severity, organisation_id) values
+    (9001, 9001, 'keyword', 'high', 'a0000000-0000-0000-0000-000000000000'),
+    (9101, 9101, 'keyword', 'high', 'b0000000-0000-0000-0000-000000000000');
+
+insert into public.activity_events (id, service_user_id, type, summary, organisation_id) values
+    (9001, 9001, 'checkin', 'Alpha check-in', 'a0000000-0000-0000-0000-000000000000'),
+    (9101, 9101, 'checkin', 'Bravo check-in', 'b0000000-0000-0000-0000-000000000000');
+
 -- Runs the same five checks against one tenant table as the signed-in user.
 -- `insert_into_bravo` is an INSERT that targets Bravo's organisation explicitly.
+-- Tables with no update or delete grant (append-only ones) refuse with a
+-- permission error instead of matching no rows; both mean "cannot".
 create function pg_temp.check_isolation(tbl text, insert_into_bravo text)
 returns setof text
 language plpgsql
@@ -90,14 +105,22 @@ begin
   execute format('select count(*) from public.%I where organisation_id = %L', tbl, 'b0000000-0000-0000-0000-000000000000') into n;
   return next is(n, 0::bigint, tbl || ': Alpha user cannot read Bravo rows');
 
-  execute format(
-    'with changed as (update public.%I set organisation_id = organisation_id where organisation_id = %L returning 1) select count(*) from changed',
-    tbl, 'b0000000-0000-0000-0000-000000000000') into n;
+  begin
+    execute format(
+      'with changed as (update public.%I set organisation_id = organisation_id where organisation_id = %L returning 1) select count(*) from changed',
+      tbl, 'b0000000-0000-0000-0000-000000000000') into n;
+  exception when insufficient_privilege then
+    n := 0;
+  end;
   return next is(n, 0::bigint, tbl || ': Alpha user cannot update Bravo rows');
 
-  execute format(
-    'with removed as (delete from public.%I where organisation_id = %L returning 1) select count(*) from removed',
-    tbl, 'b0000000-0000-0000-0000-000000000000') into n;
+  begin
+    execute format(
+      'with removed as (delete from public.%I where organisation_id = %L returning 1) select count(*) from removed',
+      tbl, 'b0000000-0000-0000-0000-000000000000') into n;
+  exception when insufficient_privilege then
+    n := 0;
+  end;
   return next is(n, 0::bigint, tbl || ': Alpha user cannot delete Bravo rows');
 
   return next throws_ok(insert_into_bravo, '42501', null, tbl || ': Alpha user cannot insert rows into Bravo');
@@ -129,6 +152,17 @@ select * from pg_temp.check_isolation('tasks',
 select * from pg_temp.check_isolation('sales',
     $$insert into public.sales (first_name, last_name, email, user_id, organisation_id)
       values ('Sneaky', 'User', 'sneaky@bravo.test', 'a0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-000000000000')$$);
+select * from pg_temp.check_isolation('service_users',
+    $$insert into public.service_users (display_name, reference_code, release_date, organisation_id)
+      values ('Sneaky', 'RE-99999', current_date, 'b0000000-0000-0000-0000-000000000000')$$);
+select * from pg_temp.check_isolation('support_profiles',
+    $$insert into public.support_profiles (service_user_id, organisation_id) values (9101, 'b0000000-0000-0000-0000-000000000000')$$);
+select * from pg_temp.check_isolation('escalations',
+    $$insert into public.escalations (service_user_id, trigger_type, severity, organisation_id)
+      values (9101, 'manual', 'low', 'b0000000-0000-0000-0000-000000000000')$$);
+select * from pg_temp.check_isolation('activity_events',
+    $$insert into public.activity_events (service_user_id, type, summary, organisation_id)
+      values (9101, 'checkin', 'Sneaky', 'b0000000-0000-0000-0000-000000000000')$$);
 
 -- Moving one of your own rows into another organisation
 select throws_ok(
@@ -172,6 +206,9 @@ select throws_ok(
     'contacts: cannot assign a Bravo staff member to an Alpha contact');
 
 -- Views and search only return the caller's organisation
+select is(
+    (select count(*) from public.service_users_summary where id = 9101), 0::bigint,
+    'service_users_summary: Alpha user cannot see Bravo service users');
 select is(
     (select count(*) from public.contacts_summary where id = 9101), 0::bigint,
     'contacts_summary: Alpha user cannot see Bravo contacts');
@@ -256,7 +293,9 @@ select is(
       + (select count(*) from public.deal_notes) + (select count(*) from public.tags)
       + (select count(*) from public.tasks) + (select count(*) from public.sales)
       + (select count(*) from public.configuration) + (select count(*) from public.organisations)
-      + (select count(*) from public.memberships),
+      + (select count(*) from public.memberships) + (select count(*) from public.service_users)
+      + (select count(*) from public.support_profiles) + (select count(*) from public.escalations)
+      + (select count(*) from public.activity_events),
     0::bigint,
     'no membership: sees no rows in any tenant table');
 select throws_ok(
@@ -294,6 +333,20 @@ select throws_ok(
     $$insert into public.deal_notes (deal_id, text, organisation_id) values (9101, 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
     '23503', null,
     'deal_notes: foreign key refuses an Alpha note on a Bravo deal, even without RLS');
+select throws_ok(
+    $$insert into public.escalations (service_user_id, trigger_type, severity, organisation_id)
+      values (9101, 'manual', 'low', 'a0000000-0000-0000-0000-000000000000')$$,
+    '23503', null,
+    'escalations: foreign key refuses an Alpha escalation on a Bravo service user, even without RLS');
+select throws_ok(
+    $$insert into public.activity_events (service_user_id, type, summary, organisation_id)
+      values (9101, 'checkin', 'Linked', 'a0000000-0000-0000-0000-000000000000')$$,
+    '23503', null,
+    'activity_events: foreign key refuses an Alpha event on a Bravo service user, even without RLS');
+select throws_ok(
+    format($$update public.service_users set assigned_worker_id = %s where id = 9001$$, (select bob_sales_id from ids)),
+    '23503', null,
+    'service_users: foreign key refuses assigning a Bravo staff member to an Alpha service user');
 
 -------------------------------------------------------------------------------
 -- Account creation

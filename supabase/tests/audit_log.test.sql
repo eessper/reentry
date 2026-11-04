@@ -11,7 +11,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(49);
+select plan(65);
 
 set constraints all immediate;
 
@@ -45,6 +45,14 @@ insert into public.contacts (id, first_name, last_name, organisation_id, sales_i
     (9002, 'Alices', 'Client', 'a0000000-0000-0000-0000-000000000000', (select alice from ids));
 insert into public.deals (id, name, stage, organisation_id, sales_id) values
     (9001, 'Fixture deal', 'opportunity', 'a0000000-0000-0000-0000-000000000000', (select alice from ids));
+insert into public.service_users (id, display_name, reference_code, release_date, organisation_id, assigned_worker_id) values
+    (9001, 'Kims Person', 'RE-90001', current_date - 2, 'a0000000-0000-0000-0000-000000000000', (select kim from ids)),
+    (9002, 'Alices Person', 'RE-90002', current_date - 2, 'a0000000-0000-0000-0000-000000000000', (select alice from ids));
+
+-- Profile ids, read here as the owner so tests can name profiles a user can't see
+create temporary table profile_ids on commit drop as
+select service_user_id, id from public.support_profiles where service_user_id in (9001, 9002);
+grant select on profile_ids to authenticated;
 
 create function pg_temp.sign_in(user_id text)
 returns void
@@ -119,6 +127,34 @@ select * from pg_temp.check_audit('tags',
     $$insert into public.tags (name, color) values ('audited', '#000000') returning id$$,
     $$update public.tags set color = '#ffffff' where id = %s$$);
 
+select * from pg_temp.check_audit('service_users',
+    $$insert into public.service_users (display_name, reference_code, release_date) values ('Audited Person', 'RE-90050', current_date) returning id$$,
+    $$update public.service_users set risk_tier = 'high' where id = %s$$);
+select * from pg_temp.check_audit('escalations',
+    $$insert into public.escalations (service_user_id, trigger_type, severity) values (9002, 'manual', 'low') returning id$$,
+    $$update public.escalations set status = 'acknowledged' where id = %s$$);
+
+-- Support profiles are created by a trigger and then configured
+insert into public.service_users (id, display_name, reference_code, release_date) values (9060, 'Profiled Person', 'RE-90060', current_date);
+update public.support_profiles set primary_risk_pathway = 'housing_instability' where service_user_id = 9060;
+select ok(exists (
+    select 1 from public.audit_log
+    where table_name = 'support_profiles' and action = 'create' and (after ->> 'service_user_id')::bigint = 9060
+      and actor_user_id = 'a0000000-0000-0000-0000-0000000000a1'
+  ), 'support_profiles: the profile created with a service user is logged, with the person who created it');
+select ok(exists (
+    select 1 from public.audit_log
+    where table_name = 'support_profiles' and action = 'update' and (after ->> 'service_user_id')::bigint = 9060
+      and before ->> 'primary_risk_pathway' is null and after ->> 'primary_risk_pathway' = 'housing_instability'
+      and (after ->> 'version')::int = 2
+  ), 'support_profiles: configuration changes are logged with before, after and the new version');
+
+insert into public.activity_events (service_user_id, type, summary) values (9002, 'checkin', 'Audited check-in');
+select ok(exists (
+    select 1 from public.audit_log
+    where table_name = 'activity_events' and action = 'create' and after ->> 'summary' = 'Audited check-in'
+  ), 'activity_events: new events are logged');
+
 update public.configuration set config = '{"title": "Audited"}' where id = 1;
 select ok(exists (
     select 1 from public.audit_log
@@ -166,6 +202,16 @@ update public.memberships set role = 'key_worker' where user_id = 'a0000000-0000
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e1');
 
 select lives_ok($$select public.log_record_view('contacts', 9001)$$, 'key worker: can log a view of an assigned contact');
+select lives_ok($$select public.log_record_view('service_users', 9001)$$, 'key worker: can log a view of an assigned service user');
+select lives_ok(
+    format($$select public.log_record_view('support_profiles', %s)$$, (select id from profile_ids where service_user_id = 9001)),
+    'key worker: can log a view of an assigned service user''s profile');
+select throws_ok($$select public.log_record_view('service_users', 9002)$$, '42501', null,
+    'key worker: cannot log a view of a service user not assigned to them');
+select throws_ok(
+    format($$select public.log_record_view('support_profiles', %s)$$, (select id from profile_ids where service_user_id = 9002)),
+    '42501', null,
+    'key worker: cannot log a view of a colleague''s profile, even by guessing its id');
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000a1');
 select results_eq(
     $$select organisation_id, actor_user_id, before is null and after is null from public.audit_log
@@ -198,9 +244,15 @@ select ok((select count(*) from public.audit_log) > 0, 'an org admin reads their
 select pg_temp.sign_in('a0000000-0000-0000-0000-0000000000e1');
 select ok(exists (select 1 from public.audit_log where table_name = 'contacts' and record_id = '9001'),
     'key worker: reads the history of an assigned contact');
-select is((select count(*) from public.audit_log where record_id = '9002'), 0::bigint,
+select is((select count(*) from public.audit_log where table_name = 'contacts' and record_id = '9002'), 0::bigint,
     'key worker: cannot read the history of a contact not assigned to them');
-select is((select count(*) from public.audit_log where table_name <> 'contacts'), 0::bigint,
+select ok(exists (select 1 from public.audit_log where table_name = 'service_users' and record_id = '9001' and action = 'view'),
+    'key worker: reads the history of an assigned service user');
+select ok(exists (select 1 from public.audit_log where table_name = 'support_profiles' and action = 'create'),
+    'key worker: reads the history of their service user''s profile');
+select is((select count(*) from public.audit_log where table_name = 'service_users' and record_id = '9002'), 0::bigint,
+    'key worker: cannot read the history of a service user not assigned to them');
+select is((select count(*) from public.audit_log where table_name not in ('contacts', 'service_users', 'support_profiles', 'escalations')), 0::bigint,
     'key worker: cannot read the rest of the organisation''s log');
 
 -------------------------------------------------------------------------------

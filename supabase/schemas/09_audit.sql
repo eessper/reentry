@@ -93,11 +93,19 @@ create or replace trigger audit_row_change after insert or update or delete on p
     for each row execute function private.audit_row_change();
 create or replace trigger audit_row_change after insert or update or delete on public.tags
     for each row execute function private.audit_row_change();
+create or replace trigger audit_row_change after insert or update or delete on public.service_users
+    for each row execute function private.audit_row_change();
+create or replace trigger audit_row_change after insert or update or delete on public.support_profiles
+    for each row execute function private.audit_row_change();
+create or replace trigger audit_row_change after insert or update or delete on public.escalations
+    for each row execute function private.audit_row_change();
+create or replace trigger audit_row_change after insert or update or delete on public.activity_events
+    for each row execute function private.audit_row_change();
 
 -- Records that the caller opened a record. The UI calls it when a record's
 -- page is shown. Refuses records the caller can't see, with the same error
--- whether the record is hidden or missing. Only contacts for now; Session 3
--- adds service_users and support_profiles.
+-- whether the record is hidden or missing. Covers service users, their
+-- support profiles, and contacts (until the CRM screens are retired).
 create or replace function public.log_record_view(table_name text, record_id bigint)
 returns void
 language plpgsql
@@ -107,14 +115,26 @@ as $$
 declare
   record_organisation_id uuid;
 begin
-  if log_record_view.table_name <> 'contacts' then
-    raise exception 'Views of % are not logged', log_record_view.table_name using errcode = '22023';
-  end if;
-
-  select c.organisation_id into record_organisation_id
-  from public.contacts c
-  where c.id = log_record_view.record_id
-    and private.can_access_assigned(c.organisation_id, c.sales_id);
+  case log_record_view.table_name
+    when 'service_users' then
+      select su.organisation_id into record_organisation_id
+      from public.service_users su
+      where su.id = log_record_view.record_id
+        and private.can_access_assigned(su.organisation_id, su.assigned_worker_id);
+    when 'support_profiles' then
+      select su.organisation_id into record_organisation_id
+      from public.support_profiles sp
+        join public.service_users su on su.id = sp.service_user_id
+      where sp.id = log_record_view.record_id
+        and private.can_access_assigned(su.organisation_id, su.assigned_worker_id);
+    when 'contacts' then
+      select c.organisation_id into record_organisation_id
+      from public.contacts c
+      where c.id = log_record_view.record_id
+        and private.can_access_assigned(c.organisation_id, c.sales_id);
+    else
+      raise exception 'Views of % are not logged', log_record_view.table_name using errcode = '22023';
+  end case;
 
   if record_organisation_id is null then
     raise exception 'Record not found' using errcode = '42501';
@@ -126,14 +146,18 @@ end;
 $$;
 
 -- Org admins and clinical leads read their organisation's whole log; key
--- workers read the history of the contacts they can see.
+-- workers read the history of the service users (and their profiles and
+-- escalations) and contacts they can see.
 alter table public.audit_log enable row level security;
 
-create policy "Leads read the log, key workers their contacts' history" on public.audit_log for select to authenticated
+create policy "Leads read the log, key workers their people's history" on public.audit_log for select to authenticated
     using (
         organisation_id = (select private.current_organisation_id())
         and (
             (select private.sees_all_records())
+            or (table_name = 'service_users' and exists (select 1 from public.service_users su where su.id::text = record_id))
+            or (table_name = 'support_profiles' and exists (select 1 from public.support_profiles sp where sp.id::text = record_id))
+            or (table_name = 'escalations' and exists (select 1 from public.escalations e where e.id::text = record_id))
             or (table_name = 'contacts' and exists (select 1 from public.contacts c where c.id::text = record_id))
         )
     );
