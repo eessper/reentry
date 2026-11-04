@@ -2,7 +2,7 @@
 
 # Re-entry project notes (read first)
 
-This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHASE1_BRIEF.md` (what we're building, the session plan) and `docs/ARCHITECTURE.md` (how the code maps to it, and the security findings F1–F10 with the session that fixes each). `docs/USER_GUIDE.md` describes every screen, the roles and the expected operating model; keep it in step with the UI. Phase 1 uses **synthetic data only**.
+This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHASE1_BRIEF.md` (what we're building, the session plan) and `docs/ARCHITECTURE.md` (how the code maps to it, and the security findings F1–F10 with the session that fixes each). `docs/USER_GUIDE.md` describes every screen, the roles and the expected operating model; keep it in step with the UI. `docs/TECHNICAL_GUIDE.md` covers deployment and the Phase 2 WhatsApp and AI design; keep it in step with deploy changes. Environment variables are listed in `.env.example`. Phase 1 uses **synthetic data only**.
 
 ## Tenancy (Session 1, done)
 

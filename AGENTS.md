@@ -93,7 +93,7 @@ supabase/
 
 ### Key Architecture Patterns
 
-For more details, check out `docs/ARCHITECTURE.md`. How the app is used is in `docs/USER_GUIDE.md`.
+For more details, check out `docs/ARCHITECTURE.md`. How the app is used is in `docs/USER_GUIDE.md`; deployment and the WhatsApp/AI integration are in `docs/TECHNICAL_GUIDE.md`.
 
 #### Mutable Dependencies
 
