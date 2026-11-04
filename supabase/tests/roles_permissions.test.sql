@@ -111,7 +111,8 @@ $$;
 
 select hasnt_column('public', 'sales', 'administrator', 'sales has no administrator column: memberships.role is the only source of roles');
 select results_eq(
-    $$select first_name, role::text from public.sales_summary order by first_name$$,
+    $$select first_name, role::text from public.sales_summary
+      where organisation_id = 'a0000000-0000-0000-0000-000000000000' order by first_name$$,
     $$values ('Alice', 'org_admin'), ('Carla', 'clinical_lead'), ('Ken', 'key_worker'), ('Kim', 'key_worker'), ('Vera', 'viewer')$$,
     'sales_summary: every staff profile with its role from memberships');
 

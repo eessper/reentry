@@ -31,7 +31,7 @@ describe("getStoragePath", () => {
 
   it("ignores URLs that are not in the attachments bucket", () => {
     expect(getStoragePath("https://favicon.show/example.com")).toBeUndefined();
-    expect(getStoragePath("/logos/logo_atomic_crm_light.svg")).toBeUndefined();
+    expect(getStoragePath("/logos/reentry-logo-light.svg")).toBeUndefined();
     expect(getStoragePath("data:image/png;base64,AAAA")).toBeUndefined();
     expect(
       getStoragePath(

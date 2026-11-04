@@ -31,6 +31,10 @@ import { CRM } from "@/components/atomic-crm/root/CRM";
  *    />
  * );
  */
-const App = () => <CRM />;
+
+const App = () => (
+  // No usage pings to the Atomic CRM authors (marmelab.com)
+  <CRM disableTelemetry />
+);
 
 export default App;

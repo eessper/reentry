@@ -2,6 +2,147 @@ import type { CrmMessages } from "./englishCrmMessages";
 
 export const frenchCrmMessages = {
   resources: {
+    service_users: {
+      name: "Personne accompagnée |||| Personnes accompagnées",
+      forcedCaseName: "Personne accompagnée",
+      fields: {
+        display_name: "Nom",
+        reference_code: "Référence",
+        release_date: "Date de sortie",
+        programme_day: "Jour",
+        risk_tier: "Niveau de risque",
+        assigned_worker_id: "Référent",
+        consent_status: "Consentement",
+        status: "Statut",
+        stability: "Stabilité",
+        last_checkin_at: "Dernier point",
+        nb_open_escalations: "Alertes ouvertes",
+      },
+      risk_tiers: {
+        low: "Faible",
+        moderate: "Modéré",
+        moderate_high: "Modéré à élevé",
+        high: "Élevé",
+      },
+      stability: {
+        stable: "Stable",
+        watch: "À surveiller",
+        critical: "Critique",
+      },
+      statuses: {
+        active: "Actif",
+        paused: "En pause",
+        exited: "Sorti",
+      },
+      consent: {
+        pending: "Consentement en attente",
+        given: "Consentement donné",
+        withdrawn: "Consentement retiré",
+      },
+      day: "Jour %{day}",
+      never: "Jamais",
+      details_title: "Statut et référent",
+      empty: "Aucune personne accompagnée",
+      validation: {
+        reference_code: "Utilisez le format RE-12345",
+      },
+      create: {
+        title: "Ajouter une personne accompagnée",
+      },
+    },
+    support_profiles: {
+      name: "Profil d'accompagnement |||| Profils d'accompagnement",
+      title: "Configuration du profil clinique",
+      version: "Version %{version}",
+      saved: "Profil enregistré",
+      fields: {
+        primary_risk_pathway: "Principal facteur de risque",
+        active_cbt_module: "Module TCC actif",
+        checkin_frequency: "Fréquence des points",
+        sentiment_dip_days: "Baisse de moral (jours)",
+        missed_checkins_threshold: "Points manqués avant alerte",
+        keyword_sensitivity: "Sensibilité aux mots-clés (1-10)",
+      },
+      pathways: {
+        substance_use: "Consommation de substances",
+        housing_instability: "Logement instable",
+        financial_stress: "Difficultés financières",
+        interpersonal_conflict: "Conflits relationnels",
+      },
+      modules: {
+        distress_tolerance: "Tolérance à la détresse",
+        cognitive_reframing: "Restructuration cognitive",
+        emotional_regulation: "Régulation émotionnelle",
+        urge_surfing: "Surf sur l'envie",
+        radical_acceptance: "Acceptation radicale",
+      },
+      frequencies: {
+        twice_daily: "Deux fois par jour",
+        daily: "Quotidienne",
+        every_other_day: "Un jour sur deux",
+        weekly: "Hebdomadaire",
+      },
+    },
+    escalations: {
+      name: "Alerte |||| Alertes",
+      fields: {
+        service_user_id: "Personne accompagnée",
+        trigger_type: "Déclencheur",
+        severity: "Gravité",
+        status: "Statut",
+        assigned_to: "Assignée à",
+        opened_at: "Ouverte",
+        notes: "Notes",
+      },
+      triggers: {
+        keyword: "Mot-clé",
+        sentiment_dip: "Baisse de moral",
+        missed_checkins: "Points manqués",
+        manual: "Signalée par l'équipe",
+        self_referral: "Demande d'aide",
+      },
+      severities: {
+        low: "Faible",
+        medium: "Moyenne",
+        high: "Élevée",
+        critical: "Critique",
+      },
+      statuses: {
+        open: "Ouverte",
+        acknowledged: "Prise en compte",
+        resolved: "Résolue",
+      },
+      actions: {
+        acknowledge: "Prendre en compte",
+        resolve: "Résoudre",
+        resolve_title: "Résoudre cette alerte",
+        notes_help: "Qu'est-ce qui a été fait ? Cela figurera au dossier.",
+        notes_required: "Ajoutez une note sur ce qui a été fait",
+      },
+      notifications: {
+        acknowledged: "Alerte prise en compte",
+        resolved: "Alerte résolue",
+      },
+      queue: {
+        title: "File des alertes",
+        needs_attention: "À traiter",
+        resolved: "Résolues",
+        empty: "Rien à traiter pour le moment",
+      },
+    },
+    activity_events: {
+      name: "Activité",
+      types: {
+        checkin: "Point",
+        missed_checkin: "Point manqué",
+        cbt_deploy: "Exercice TCC",
+        logistics: "Logistique",
+        escalation: "Alerte",
+        override: "Intervention manuelle",
+        profile_change: "Changement de profil",
+      },
+      empty: "Aucune activité",
+    },
     companies: {
       name: "Entreprise |||| Entreprises",
       forcedCaseName: "Entreprise",
@@ -281,6 +422,7 @@ export const frenchCrmMessages = {
     },
     sales: {
       name: "Utilisateur |||| Utilisateurs",
+      team: "Équipe",
       fields: {
         first_name: "Prénom",
         last_name: "Nom",
@@ -373,6 +515,52 @@ export const frenchCrmMessages = {
     },
   },
   crm: {
+    control_tower: {
+      title: "Tour de contrôle",
+      short_title: "Aperçu",
+      kpi: {
+        active_clients: "Personnes suivies",
+        checkin_adherence: "Assiduité aux points (7 jours)",
+        open_escalations: "Alertes ouvertes",
+        urgent: "%{count} élevées ou critiques",
+        no_checkins: "Aucun point pour l'instant",
+        caseload: "Vos personnes suivies",
+        organisation: "Toute l'organisation",
+      },
+      stability_chart: "Stabilité sur 7 jours",
+      cohort: "Cohorte",
+      activity: "Activité en direct",
+      viewer_notice:
+        "Votre rôle n'affiche que des chiffres agrégés. Les dossiers individuels sont masqués.",
+      error: "Les chiffres de la tour de contrôle n'ont pas pu être chargés.",
+    },
+    audit_trail: {
+      title: "Historique de configuration",
+      empty: "Aucun historique",
+      error: "L'historique n'a pas pu être chargé.",
+      by: "par %{name}",
+      changed: "Modifié : %{fields}",
+      events: {
+        service_users: {
+          create: "Personne ajoutée",
+          update: "Personne modifiée",
+          delete: "Personne retirée",
+          view: "Dossier consulté",
+        },
+        support_profiles: {
+          create: "Profil créé",
+          update: "Profil modifié",
+          delete: "Profil supprimé",
+          view: "Profil consulté",
+        },
+        escalations: {
+          create: "Alerte ouverte",
+          update: "Alerte mise à jour",
+          delete: "Alerte supprimée",
+          view: "Alerte consultée",
+        },
+      },
+    },
     action: {
       reset_password: "Réinitialiser le mot de passe",
     },

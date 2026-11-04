@@ -68,9 +68,8 @@ export const authProvider: AuthProvider = {
     const localUser = userItem ? (JSON.parse(userItem) as Sale) : null;
     if (!localUser) return false;
 
-    // Compute access rights from the sale role
-    const role = localUser.role === "org_admin" ? "admin" : "user";
-    return canAccess(role, params);
+    // Access rights follow the membership role
+    return canAccess(localUser.role, params);
   },
   getIdentity: () => {
     const userItem = localStorage.getItem(USER_STORAGE_KEY);
@@ -79,6 +78,7 @@ export const authProvider: AuthProvider = {
       id: user?.id ?? 0,
       fullName: user ? `${user.first_name} ${user.last_name}` : "Jane Doe",
       avatar: user?.avatar?.src,
+      role: user?.role ?? "org_admin",
     });
   },
   async getAuthorizationDetails() {

@@ -17,6 +17,7 @@ const getBaseAuthProvider = () =>
         id: sale.id,
         fullName: `${sale.first_name} ${sale.last_name}`,
         avatar: sale.avatar?.src,
+        role: sale.role,
       };
     },
   });
@@ -151,9 +152,8 @@ export const getAuthProvider = (): AuthProvider => {
       const sale = await getSale();
       if (sale == null) return false;
 
-      // Compute access rights from the sale role
-      const role = sale.role === "org_admin" ? "admin" : "user";
-      return canAccess(role, params);
+      // Access rights follow the membership role
+      return canAccess(sale.role, params);
     },
     getAuthorizationDetails(authorizationId: string) {
       return getSupabaseClient().auth.oauth.getAuthorizationDetails(

@@ -4,7 +4,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Suspense, type ReactNode } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 
-import { DataImportProvider } from "../dataImport/DataImportProvider";
 import { useConfigurationLoader } from "../root/useConfigurationLoader";
 import { MobileNavigation } from "./MobileNavigation";
 import { PullToRefresh } from "./PullToRefresh";
@@ -12,7 +11,7 @@ import { PullToRefresh } from "./PullToRefresh";
 export const MobileLayout = ({ children }: { children: ReactNode }) => {
   useConfigurationLoader();
   return (
-    <DataImportProvider>
+    <>
       <PullToRefresh />
       <ErrorBoundary FallbackComponent={Error}>
         <Suspense fallback={<Skeleton className="h-12 w-12 rounded-full" />}>
@@ -21,6 +20,6 @@ export const MobileLayout = ({ children }: { children: ReactNode }) => {
       </ErrorBoundary>
       <MobileNavigation />
       <Notification mobileOffset={{ bottom: "72px" }} />
-    </DataImportProvider>
+    </>
   );
 };

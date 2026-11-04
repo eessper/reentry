@@ -26,8 +26,22 @@ This repo is **Re-entry**, built on Atomic CRM. Before any work, read `docs/PHAS
 ## Service users and demo data (Session 3, done)
 
 - The Re-entry data model is in `supabase/schemas/08_service_users.sql`: `service_users` (assigned through `assigned_worker_id`), `support_profiles` (one per service user, created by a trigger, `version` bumped on every update), `escalations` (acknowledge/resolve times stamped by a trigger), `activity_events` (append-only for app roles), and the `service_users_summary` view (derived `programme_day`, `nb_open_escalations`). Build the Session 4 screens on these, not on `contacts`.
-- The CRM tables (`contacts`, `companies`, `deals`, ...) still exist because the current screens use them. Retire them when the Session 4 screens replace those pages.
+- The CRM tables (`contacts`, `companies`, `deals`, `tasks`, `tags`, notes) are still in the database, but nothing in the app uses them since Session 4. Drop them in a dedicated migration (see "Retiring the CRM tables" below).
 - Demo data: `npx supabase db reset --local && make seed-demo` (see `scripts/seed-demo.mjs`). Two fictional organisations; staff sign in as `admin|lead|keyworker1|keyworker2|viewer@<northbridge|harbourside>.example.test` with `DEMO_PASSWORD` (default `demo-password`, local only). The script refuses non-local URLs unless given `--allow-remote`.
+
+## Screens (Session 4, done)
+
+- `/` Live Control Tower (`controlTower/`): KPI cards and the 7-day stability chart come from `control_tower_stats()` (aggregates only, so viewers see them too); the cohort and activity feed are individual records, shown to staff only.
+- `/service_users` cohort list and `/service_users/:id/show` profile (`serviceUsers/`): clinical profile configuration (versioned), status and assignment, open escalations, activity and the audit trail (`service_user_history()`). Opening a profile logs a view.
+- `/escalations` queue (`escalations/`): acknowledge, and resolve with a note.
+- `/sales` Team (org admins): invite staff and set roles through the `users` edge function.
+- UI access follows `providers/commons/canAccess.ts` (a role matrix mirroring RLS). The status dots come from `service_user_stability()`.
+- The Atomic CRM screens (contacts, companies, deals, tasks, notes, tags, CRM import, global search) were removed from the frontend in Session 4, as were the `merge_contacts` edge function and the MCP card on the profile page. The `mcp` edge function itself still exists: do not deploy it.
+- FakeRest demo mode (`make start-demo`) generates service users in `providers/fakerest/dataGenerator/serviceUsers.ts`; it has no audit log or row-level security.
+
+## Retiring the CRM tables (next)
+
+Drop `contacts`, `companies`, `deals`, `deal_notes`, `contact_notes`, `tasks`, `tags`, their views (`contacts_summary`, `companies_summary`, `activity_log`), `global_search`, `merge_contacts` and the favicon/gravatar triggers (finding F7). The tenancy, roles, audit and storage pgTAP suites use contacts and notes as fixtures, so move those fixtures to `service_users`/`escalations` in the same change, and make note attachments (`storage_deletion_queue`, the storage policies) follow whatever replaces notes.
 
 ## Database workflow in cloud sessions
 

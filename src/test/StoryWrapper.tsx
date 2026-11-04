@@ -8,12 +8,10 @@ import { createDataProvider } from "@/components/atomic-crm/providers/fakerest";
 import { DEFAULT_USER } from "@/components/atomic-crm/providers/fakerest/authProvider";
 import type { Db } from "@/components/atomic-crm/providers/fakerest/dataGenerator/types";
 import type {
-  Company,
-  Contact,
-  Deal,
+  Escalation,
   Sale,
+  ServiceUser,
 } from "@/components/atomic-crm/types";
-import { DataImportProvider } from "@/components/atomic-crm/dataImport/DataImportProvider";
 import { CRM } from "@/components/atomic-crm/root/CRM";
 import { testI18nProvider } from "@/components/atomic-crm/providers/commons/i18nProvider";
 
@@ -46,15 +44,12 @@ const baseSale: Sale = {
 // that matter for each scenario.
 export const createCrmDb = (overrides: Partial<Db> = {}): Db =>
   ({
-    companies: [],
     configuration: [{ config: {}, id: 1 }],
-    contact_notes: [],
-    contacts: [],
-    deal_notes: [],
-    deals: [],
     sales: [baseSale],
-    tags: [],
-    tasks: [],
+    service_users: [],
+    support_profiles: [],
+    escalations: [],
+    activity_events: [],
     ...overrides,
   }) as Db;
 
@@ -63,66 +58,39 @@ export const buildSale = (overrides: Partial<Sale> = {}): Sale => ({
   ...overrides,
 });
 
-export const buildCompany = (overrides: Partial<Company> = {}): Company => ({
-  address: "1 Infinite Loop",
-  city: "Cupertino",
-  country: "USA",
-  created_at: "2025-01-01T09:00:00.000Z",
-  description: "",
+export const buildServiceUser = (
+  overrides: Partial<ServiceUser> = {},
+): ServiceUser => ({
   id: 1,
-  linkedin_url: "",
-  logo: { src: "", title: "logo" } as Company["logo"],
-  name: "Acme",
-  phone_number: "",
-  revenue: "",
-  sales_id: 0,
-  sector: "Tech",
-  size: 10,
-  state_abbr: "CA",
-  tax_identifier: "",
-  website: "",
-  zipcode: "95014",
+  display_name: "Ira E.",
+  reference_code: "RE-43714",
+  release_date: "2026-10-20",
+  programme_day: 2,
+  risk_tier: "moderate",
+  assigned_worker_id: 0,
+  consent_status: "given",
+  status: "active",
+  nb_open_escalations: 0,
+  stability: "stable",
+  last_checkin_at: null,
+  created_at: "2026-10-20T09:00:00.000Z",
+  updated_at: "2026-10-20T09:00:00.000Z",
   ...overrides,
 });
 
-// Build a valid contact record with sensible defaults to keep tests and stories terse.
-export const buildContact = (overrides: Partial<Contact> = {}): Contact => ({
-  background: "",
-  company_id: null,
-  company_name: undefined,
-  email_jsonb: [{ email: "ada@example.com", type: "Work" }],
-  first_name: "Ada",
-  first_seen: "2025-01-01T09:00:00.000Z",
-  gender: "female",
-  has_newsletter: false,
+export const buildEscalation = (
+  overrides: Partial<Escalation> = {},
+): Escalation => ({
   id: 1,
-  last_name: "Lovelace",
-  last_seen: "2025-01-02T10:00:00.000Z",
-  linkedin_url: null,
-  nb_tasks: 0,
-  phone_jsonb: [],
-  sales_id: 0,
-  status: "warm",
-  tags: [],
-  title: "CTO",
-  ...overrides,
-});
-
-export const buildDeal = (overrides: Partial<Deal> = {}): Deal => ({
-  amount: 1000,
-  archived_at: undefined,
-  category: "Other",
-  company_id: 1,
-  contact_ids: [],
-  created_at: "2025-01-01T09:00:00.000Z",
-  description: "",
-  expected_closing_date: "2025-02-01T09:00:00.000Z",
-  id: 1,
-  index: 0,
-  name: "Acme deal",
-  sales_id: 0,
-  stage: "opportunity",
-  updated_at: "2025-01-01T09:00:00.000Z",
+  service_user_id: 1,
+  trigger_type: "keyword",
+  severity: "high",
+  status: "open",
+  assigned_to: null,
+  opened_at: "2026-10-20T10:00:00.000Z",
+  acknowledged_at: null,
+  resolved_at: null,
+  notes: "Message mentioned feeling unsafe at night.",
   ...overrides,
 });
 
@@ -171,10 +139,10 @@ export const StoryWrapper = ({
         store={store}
         disableTelemetry
         layout={({ children }) => (
-          <DataImportProvider>
+          <>
             {children}
             <Notification />
-          </DataImportProvider>
+          </>
         )}
       />
     </MemoryRouter>
