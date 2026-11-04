@@ -17,8 +17,8 @@ import {
   PAUSED_REPLY,
   replyTo,
   type ReplyEvent,
-} from "./replies";
-import { screenMessage } from "./riskScreen";
+} from "../../../../supabase/functions/_shared/conversation/replies.ts";
+import { screenMessage } from "../../../../supabase/functions/_shared/conversation/riskScreen.ts";
 
 export type ConversationMessage = {
   id: number;

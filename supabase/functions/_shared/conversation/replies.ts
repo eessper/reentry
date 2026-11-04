@@ -1,12 +1,12 @@
-import type { ActivityEventType, CbtModule } from "../types";
-import type { RiskResult } from "./riskScreen";
-import { normaliseMessage } from "./riskScreen";
+import type { ActivityEventType, CbtModule } from "./types.ts";
+import type { RiskResult } from "./riskScreen.ts";
+import { normaliseMessage } from "./riskScreen.ts";
 
 /**
- * Scripted replies for the Control Tower's conversation preview. They stand
- * in for the Phase 2 engine so a demo shows the shape of the service: the
- * risk screen first, then a check-in, logistics help or a CBT exercise. No
- * AI is involved and nothing leaves the browser.
+ * Scripted replies, shared by the Control Tower's WhatsApp preview and the
+ * Phase 2 WhatsApp engine: check-ins, logistics help, CBT exercises, and the
+ * fixed safety messages (handover, holding reply, crisis contacts). No AI is
+ * involved; the engine's AI-assisted replies are a separate step after these.
  */
 
 /** UK crisis contacts sent instead of silence (brief, Phase 2 rules). */

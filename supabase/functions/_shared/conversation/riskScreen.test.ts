@@ -1,4 +1,6 @@
-import { normaliseMessage, screenMessage } from "./riskScreen";
+// @vitest-environment node
+import { describe, expect, it } from "vitest";
+import { normaliseMessage, screenMessage } from "./riskScreen.ts";
 
 describe("screenMessage", () => {
   it("flags self-harm as critical at any sensitivity", () => {

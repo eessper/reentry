@@ -244,7 +244,7 @@ What happens to each incoming message:
 3. Find the service user by their WhatsApp number (stored as a keyed hash; see 6.5)
        unknown number → polite "this number isn't registered" reply, nothing stored
 4. Consent check: consent_status must be 'given', otherwise send the consent message only
-5. DETERMINISTIC RISK SCREEN (src/components/atomic-crm/conversation/riskScreen.ts, shared code):
+5. DETERMINISTIC RISK SCREEN (supabase/functions/_shared/conversation/riskScreen.ts):
        match → open escalation (trigger 'keyword', severity from the rule, note names the rule)
              → record an activity event
              → mark the conversation PAUSED
@@ -257,7 +257,7 @@ What happens to each incoming message:
        → send the reply → record an activity event (type, not content)
 ```
 
-The UI preview already implements steps 5–7, and its tests cover them (`conversation/*.test.ts`). Move `riskScreen.ts` and `replies.ts` into `supabase/functions/_shared/` so the browser and the engine run **the same rules**. They have no browser-only dependencies.
+The rules for steps 5–7 already exist and are tested. They live in `supabase/functions/_shared/conversation/` (`riskScreen.ts`, `replies.ts`), where both the Control Tower preview and the engine import them, so the browser and WhatsApp run **the same rules**. They have no dependencies and type-check under Deno; `src/components/atomic-crm/conversation/sharedTypes.check.ts` fails the typecheck if their types drift from the app's.
 
 Reference sketch of the entry point (Deno):
 
@@ -429,7 +429,7 @@ const client = new AnthropicVertex({ projectId: "<gcp-project>", region: "europe
 
 Each step is its own PR, following the same rules as Phase 1: schema first, then the migration, RLS, audit and tests.
 
-1. **Shared rules.** Move `riskScreen.ts` and `replies.ts` into `supabase/functions/_shared/` and import them in both places. Add Deno tests.
+1. **Shared rules (done).** `riskScreen.ts` and `replies.ts` are in `supabase/functions/_shared/conversation/`, used by both the preview and the engine, and tested with the edge-function tests.
 2. **Data model.** Add `whatsapp_contacts`, `conversations`, `messages` (encrypted) and `consents`, with pgTAP tests for tenancy, roles, audit and read-logging.
 3. **`whatsapp_webhook`.** Signature check, de-duplication, consent, risk screen, escalation and pause, scripted replies. Test it with Meta's test number on staging.
 4. **Sending and templates.** Add `send_checkins` and `escalation_watchdog` with `pg_cron`, and get Meta to approve the templates.
