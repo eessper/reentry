@@ -19,7 +19,27 @@ const TABLES = [
   "favicons_excluded_domains",
   "configuration",
   "sales",
+  "memberships",
+  "organisations",
 ];
+
+// Every account and record belongs to an organisation. Each test gets one,
+// created on first use after the reset.
+let organisationId: string | undefined;
+
+async function getOrganisationId(): Promise<string> {
+  if (organisationId) return organisationId;
+  const { data, error } = await adminSupabase
+    .from("organisations")
+    .insert({ name: "E2E organisation" })
+    .select("id")
+    .single();
+  if (error) {
+    throw new Error(`Failed to create organisation: ${error.message}`);
+  }
+  organisationId = data.id as string;
+  return organisationId;
+}
 
 async function resetDb() {
   for (const table of TABLES) {
@@ -27,7 +47,9 @@ async function resetDb() {
     await adminSupabase.from(table).delete().not("id", "is", null);
   }
 
-  // Delete all auth users (cascades to sales via DB trigger)
+  organisationId = undefined;
+
+  // Delete all auth users (their sales and memberships rows are deleted above)
   const { data } = await adminSupabase.auth.admin.listUsers();
   await Promise.all(
     data.users.map((user) => adminSupabase.auth.admin.deleteUser(user.id)),
@@ -45,6 +67,10 @@ async function createUser({
     email,
     password,
     email_confirm: true,
+    app_metadata: {
+      organisation_id: await getOrganisationId(),
+      role: "org_admin",
+    },
   });
 
   if (error) {
@@ -72,6 +98,13 @@ async function createSales({
       email,
       password,
       email_confirm: true,
+      // Names live in user_metadata, like accounts invited from the app:
+      // the auth sync trigger copies them onto the staff profile on sign-in.
+      user_metadata: { first_name, last_name },
+      app_metadata: {
+        organisation_id: await getOrganisationId(),
+        role: administrator ? "org_admin" : "key_worker",
+      },
     });
 
   if (userError) {
@@ -107,10 +140,12 @@ async function createNotes({
 }) {
   if (notes.length === 0) return;
 
+  const organisation_id = await getOrganisationId();
   const { error } = await adminSupabase.from("contact_notes").insert(
     notes.map(({ text, date, status = "cold" }) => ({
       contact_id: contactId,
       sales_id: salesId,
+      organisation_id,
       text,
       date,
       status,
@@ -131,7 +166,11 @@ async function createCompany({
 }) {
   const { data, error } = await adminSupabase
     .from("companies")
-    .insert({ name, sales_id: salesId })
+    .insert({
+      name,
+      sales_id: salesId,
+      organisation_id: await getOrganisationId(),
+    })
     .select("id")
     .single();
 
@@ -169,6 +208,7 @@ async function createContact({
       title,
       company_id,
       sales_id,
+      organisation_id: await getOrganisationId(),
       first_seen: new Date().toISOString(),
       last_seen: new Date().toISOString(),
       has_newsletter: false,
